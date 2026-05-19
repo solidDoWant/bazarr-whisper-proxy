@@ -6,6 +6,8 @@ from whisper_proxy.openarc import OpenArcUnavailable
 
 router = APIRouter()
 
+_RETRY_AFTER = {"Retry-After": "30"}
+
 
 @router.get("/status")
 async def status(request: Request) -> Response:
@@ -15,12 +17,12 @@ async def status(request: Request) -> Response:
         model_state = await client.model_state()
     except OpenArcUnavailable:
         model_state = "unknown"
-    if model_state not in ("loaded", "unknown"):
+    if model_state == "loaded":
         return JSONResponse(
-            {"status": "ok", "model": settings.OPENARC_MODEL, "model_state": model_state},
-            status_code=503,
-            headers={"Retry-After": "30"},
+            {"status": "ok", "model": settings.OPENARC_MODEL, "model_state": "loaded"}
         )
     return JSONResponse(
-        {"status": "ok", "model": settings.OPENARC_MODEL, "model_state": model_state}
+        {"detail": "model loading", "model_state": model_state},
+        status_code=503,
+        headers=_RETRY_AFTER,
     )

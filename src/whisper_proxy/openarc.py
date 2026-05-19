@@ -37,11 +37,12 @@ class Transcription:
 class OpenArcClient:
     def __init__(self, settings: Settings) -> None:
         self._model = settings.OPENARC_MODEL
+        self._connect_timeout = float(settings.OPENARC_CONNECT_TIMEOUT)
         self._client = httpx.AsyncClient(
             base_url=str(settings.OPENARC_BASE_URL),
             timeout=httpx.Timeout(
                 None,
-                connect=float(settings.OPENARC_CONNECT_TIMEOUT),
+                connect=self._connect_timeout,
                 read=float(settings.OPENARC_READ_TIMEOUT),
             ),
         )
@@ -93,7 +94,10 @@ class OpenArcClient:
 
     async def model_state(self) -> Literal["loaded", "loading", "unloaded", "unknown"]:
         try:
-            resp = await self._client.get("/openarc/status")
+            resp = await self._client.get(
+                "/openarc/status",
+                timeout=httpx.Timeout(None, connect=self._connect_timeout, read=5.0),
+            )
         except httpx.TransportError as exc:
             raise OpenArcUnavailable(str(exc)) from exc
 
