@@ -9,7 +9,7 @@ from whisper_proxy.config import Settings
 from whisper_proxy.logging_setup import configure_logging
 from whisper_proxy.middleware import CorrelationMiddleware
 from whisper_proxy.openarc import OpenArcClient
-from whisper_proxy.routes import asr, healthz, status
+from whisper_proxy.routes import asr, detect, healthz, status
 
 
 @asynccontextmanager
@@ -32,6 +32,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="whisper-proxy", version="0.1.0", lifespan=lifespan)
     app.add_middleware(CorrelationMiddleware)
     app.include_router(asr.router)
+    app.include_router(detect.router)
     app.include_router(healthz.router)
     app.include_router(status.router)
 
