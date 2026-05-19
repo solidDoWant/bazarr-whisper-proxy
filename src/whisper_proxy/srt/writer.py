@@ -30,3 +30,9 @@ def cues_to_srt(cues: list[Cue]) -> str:
         parts.append("")  # blank separator line
 
     return "\n".join(parts) + "\n"
+
+
+def fallback_srt(text: str, duration_sec: float) -> str:
+    """Single-cue SRT spanning the full duration, used when alignment fails."""
+    cue = Cue(start_sec=0.0, end_sec=max(duration_sec, 0.001), lines=(text,))
+    return cues_to_srt([cue])

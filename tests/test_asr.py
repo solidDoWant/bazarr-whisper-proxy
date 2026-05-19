@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from whisper_proxy._types import Word
 from whisper_proxy.app import create_app
-from whisper_proxy.openarc import Transcription
+from whisper_proxy.openarc import OpenArcClient, Transcription
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -84,7 +84,7 @@ def _post_asr(
 def test_happy_path_returns_200_valid_srt() -> None:
     with (
         respx.mock,
-        patch("whisper_proxy.app.align", new=AsyncMock(return_value=_FAKE_WORDS)),
+        patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
     ):
         respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=VERBOSE_JSON))
         respx.get(STATUS_URL).mock(
@@ -108,7 +108,7 @@ def test_happy_path_returns_200_valid_srt() -> None:
 def test_response_content_type_is_text_plain() -> None:
     with (
         respx.mock,
-        patch("whisper_proxy.app.align", new=AsyncMock(return_value=_FAKE_WORDS)),
+        patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
     ):
         respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=VERBOSE_JSON))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
@@ -129,7 +129,7 @@ def test_response_content_type_is_text_plain() -> None:
 def test_response_has_source_header() -> None:
     with (
         respx.mock,
-        patch("whisper_proxy.app.align", new=AsyncMock(return_value=_FAKE_WORDS)),
+        patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
     ):
         respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=VERBOSE_JSON))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
@@ -147,7 +147,7 @@ def test_response_has_source_header() -> None:
 def test_no_language_param_produces_valid_srt() -> None:
     with (
         respx.mock,
-        patch("whisper_proxy.app.align", new=AsyncMock(return_value=_FAKE_WORDS)),
+        patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
     ):
         respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=VERBOSE_JSON))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
@@ -166,7 +166,7 @@ def test_no_language_param_produces_valid_srt() -> None:
 def test_video_file_param_is_accepted() -> None:
     with (
         respx.mock,
-        patch("whisper_proxy.app.align", new=AsyncMock(return_value=_FAKE_WORDS)),
+        patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
     ):
         respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=VERBOSE_JSON))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
@@ -203,7 +203,7 @@ def test_oversized_audio_returns_413() -> None:
 
     with (
         respx.mock,
-        patch("whisper_proxy.app.assert_within_size_limit", side_effect=AudioTooLarge("too big")),
+        patch("whisper_proxy.routes.asr.assert_within_size_limit", side_effect=AudioTooLarge("too big")),
     ):
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
@@ -223,10 +223,7 @@ def test_openarc_unavailable_returns_502() -> None:
 
     with (
         respx.mock,
-        patch(
-            "whisper_proxy.app.OpenArcClient.transcribe",
-            new=AsyncMock(side_effect=OpenArcUnavailable("connection refused")),
-        ),
+        patch.object(OpenArcClient, "transcribe", new=AsyncMock(side_effect=OpenArcUnavailable("connection refused"))),
     ):
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
@@ -245,10 +242,7 @@ def test_openarc_bad_request_returns_502() -> None:
 
     with (
         respx.mock,
-        patch(
-            "whisper_proxy.app.OpenArcClient.transcribe",
-            new=AsyncMock(side_effect=OpenArcBadRequest("model not loaded")),
-        ),
+        patch.object(OpenArcClient, "transcribe", new=AsyncMock(side_effect=OpenArcBadRequest("model not loaded"))),
     ):
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
@@ -267,10 +261,7 @@ def test_openarc_inference_error_returns_502() -> None:
 
     with (
         respx.mock,
-        patch(
-            "whisper_proxy.app.OpenArcClient.transcribe",
-            new=AsyncMock(side_effect=OpenArcInferenceError("OOM")),
-        ),
+        patch.object(OpenArcClient, "transcribe", new=AsyncMock(side_effect=OpenArcInferenceError("OOM"))),
     ):
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
@@ -290,7 +281,7 @@ def test_alignment_failed_returns_fallback_srt() -> None:
     with (
         respx.mock,
         patch(
-            "whisper_proxy.app.align",
+            "whisper_proxy.routes.asr.align",
             new=AsyncMock(side_effect=AlignmentFailed("no alignable tokens")),
         ),
     ):
@@ -317,7 +308,7 @@ def test_alignment_failed_returns_fallback_srt() -> None:
 def test_summary_log_fields_no_crash(caplog: pytest.LogCaptureFixture) -> None:
     with (
         respx.mock,
-        patch("whisper_proxy.app.align", new=AsyncMock(return_value=_FAKE_WORDS)),
+        patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
     ):
         respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=VERBOSE_JSON))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
@@ -335,7 +326,7 @@ def test_summary_log_fields_no_crash(caplog: pytest.LogCaptureFixture) -> None:
 def test_x_request_id_header_present() -> None:
     with (
         respx.mock,
-        patch("whisper_proxy.app.align", new=AsyncMock(return_value=_FAKE_WORDS)),
+        patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
     ):
         respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=VERBOSE_JSON))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
@@ -349,7 +340,7 @@ def test_x_request_id_forwarded_when_provided() -> None:
     custom_id = "550e8400-e29b-41d4-a716-446655440000"
     with (
         respx.mock,
-        patch("whisper_proxy.app.align", new=AsyncMock(return_value=_FAKE_WORDS)),
+        patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
     ):
         respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=VERBOSE_JSON))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
@@ -381,7 +372,7 @@ def test_contract_replay_bazarr_multipart_shape() -> None:
     }
     with (
         respx.mock,
-        patch("whisper_proxy.app.align", new=AsyncMock(return_value=_FAKE_WORDS)),
+        patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
     ):
         respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=VERBOSE_JSON))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
@@ -410,8 +401,8 @@ def test_contract_replay_broken_writer_triggers_validation_gate() -> None:
     """When the SRT writer produces garbage, the route returns 500."""
     with (
         respx.mock,
-        patch("whisper_proxy.app.align", new=AsyncMock(return_value=_FAKE_WORDS)),
-        patch("whisper_proxy.app.cues_to_srt", return_value="this is not valid srt\n"),
+        patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
+        patch("whisper_proxy.routes.asr.cues_to_srt", return_value="this is not valid srt\n"),
     ):
         respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=VERBOSE_JSON))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
