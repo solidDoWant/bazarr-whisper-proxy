@@ -1,0 +1,14 @@
+[
+  {"token": "This", "start_sec": 0.0, "end_sec": 0.3},
+  {"token": "is", "start_sec": 0.4, "end_sec": 0.55},
+  {"token": "a", "start_sec": 0.6, "end_sec": 0.7},
+  {"token": "sentence", "start_sec": 0.75, "end_sec": 1.1},
+  {"token": "that", "start_sec": 1.15, "end_sec": 1.4},
+  {"token": "is", "start_sec": 1.45, "end_sec": 1.6},
+  {"token": "long", "start_sec": 1.65, "end_sec": 1.9},
+  {"token": "enough", "start_sec": 1.95, "end_sec": 2.3},
+  {"token": "to", "start_sec": 2.35, "end_sec": 2.5},
+  {"token": "need", "start_sec": 2.55, "end_sec": 2.8},
+  {"token": "two", "start_sec": 2.85, "end_sec": 3.0},
+  {"token": "lines.", "start_sec": 3.05, "end_sec": 3.5}
+]

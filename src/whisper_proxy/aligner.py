@@ -5,7 +5,6 @@ import concurrent.futures
 import logging
 import os
 import threading
-from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -21,6 +20,7 @@ from ctc_forced_aligner import (
     preprocess_text,
 )
 
+from ._types import Word
 from .config import Settings
 
 logger = logging.getLogger(__name__)
@@ -106,13 +106,6 @@ _ISO2_TO_ISO3: dict[str, str] = {
 
 class AlignmentFailed(Exception):
     pass
-
-
-@dataclass(frozen=True)
-class Word:
-    token: str
-    start_sec: float
-    end_sec: float
 
 
 # Process-level model state — loaded once, reused on all subsequent calls.

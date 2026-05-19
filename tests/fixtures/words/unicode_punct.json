@@ -1,0 +1,6 @@
+[
+  {"token": "こんにちは", "start_sec": 0.0, "end_sec": 0.8},
+  {"token": "世界。", "start_sec": 0.9, "end_sec": 1.5},
+  {"token": "お元気ですか？", "start_sec": 2.0, "end_sec": 3.0},
+  {"token": "はい！", "start_sec": 3.5, "end_sec": 4.0}
+]

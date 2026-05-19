@@ -1,0 +1,4 @@
+[
+  {"token": "Hello", "start_sec": 0.0, "end_sec": 0.4},
+  {"token": "world.", "start_sec": 0.5, "end_sec": 1.0}
+]

@@ -1,0 +1,12 @@
+[
+  {"token": "The", "start_sec": 0.0, "end_sec": 0.2},
+  {"token": "quick", "start_sec": 0.3, "end_sec": 0.6},
+  {"token": "brown", "start_sec": 0.7, "end_sec": 1.0},
+  {"token": "fox", "start_sec": 1.1, "end_sec": 1.4},
+  {"token": "jumps.", "start_sec": 1.5, "end_sec": 2.0},
+  {"token": "A", "start_sec": 3.0, "end_sec": 3.2},
+  {"token": "lazy", "start_sec": 3.3, "end_sec": 3.7},
+  {"token": "dog", "start_sec": 3.8, "end_sec": 4.1},
+  {"token": "sleeps!", "start_sec": 4.2, "end_sec": 4.8},
+  {"token": "Why?", "start_sec": 5.5, "end_sec": 6.0}
+]

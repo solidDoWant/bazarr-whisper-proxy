@@ -1,0 +1,10 @@
+[
+  {"token": "First", "start_sec": 0.0, "end_sec": 0.4},
+  {"token": "part", "start_sec": 0.5, "end_sec": 0.9},
+  {"token": "here", "start_sec": 1.0, "end_sec": 1.4},
+  {"token": "then", "start_sec": 2.2, "end_sec": 2.6},
+  {"token": "after", "start_sec": 2.7, "end_sec": 3.0},
+  {"token": "a", "start_sec": 3.05, "end_sec": 3.15},
+  {"token": "long", "start_sec": 3.2, "end_sec": 3.5},
+  {"token": "pause.", "start_sec": 3.55, "end_sec": 4.0}
+]
