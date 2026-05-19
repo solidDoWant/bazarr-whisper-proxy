@@ -73,9 +73,7 @@ async def asr(
             )
     except AlignmentFailed as exc:
         _log.warning("alignment failed, using fallback SRT: %s", exc)
-        duration = float(
-            transcription.metrics.get("audio_duration_sec") or len(pcm) / (16000 * 2)
-        )
+        duration = float(transcription.metrics.get("audio_duration_sec") or len(pcm) / (16000 * 2))
         return PlainTextResponse(
             fallback_srt(transcription.text, duration),
             headers={"Source": _SOURCE_HEADER},
