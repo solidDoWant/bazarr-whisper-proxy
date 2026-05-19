@@ -19,6 +19,7 @@ class Settings(BaseSettings):
 
     # Forced aligner
     ALIGNER_MODEL: str = "mms-1b-all"
+    ALIGNER_MODEL_PATH: str = "~/ctc_forced_aligner/model.onnx"
     ALIGNER_BATCH_SIZE: int = 16
     ALIGNER_WINDOW_SEC: int = 30
 
