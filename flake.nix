@@ -63,68 +63,6 @@
           sourcePreference = "wheel";
         };
 
-        # ---------- CPU-only overlay: make CUDA/GPU packages no-ops ----------
-        # torch and its deps reference these on Linux; they're not needed for
-        # CPU-only inference and would add several GB to the image.
-        cpuOnlyOverlay =
-          final: prev:
-          let
-            mkNoop =
-              name:
-              pkgs.runCommandLocal "${name}-noop" {
-                passthru = {
-                  dependencies = { };
-                  optional-dependencies = { };
-                  dependency-groups = { };
-                };
-              } "mkdir $out";
-
-            cudaPackages = [
-              "cuda-bindings"
-              "cuda-pathfinder"
-              "nvidia-cublas"
-              "nvidia-cuda-cupti"
-              "nvidia-cuda-nvrtc"
-              "nvidia-cuda-runtime"
-              "nvidia-cudnn-cu13"
-              "nvidia-cufft"
-              "nvidia-cufile"
-              "nvidia-curand"
-              "nvidia-cusolver"
-              "nvidia-cusparse"
-              "nvidia-cusparselt-cu13"
-              "nvidia-nccl-cu13"
-              "nvidia-nvjitlink"
-              "nvidia-nvshmem-cu13"
-              "nvidia-nvtx"
-              "triton"
-            ];
-          in
-          # cuda-toolkit has extras that torch[linux] depends on;
-          # make each extra resolve to an empty dep set so the resolver
-          # doesn't error on "extra not found".
-          {
-            "cuda-toolkit" = pkgs.runCommandLocal "cuda-toolkit-noop" {
-              passthru = {
-                dependencies = { };
-                optional-dependencies = lib.genAttrs [
-                  "cudart"
-                  "cufft"
-                  "cufile"
-                  "cupti"
-                  "curand"
-                  "cusolver"
-                  "cusparse"
-                  "nvjitlink"
-                  "nvrtc"
-                  "nvtx"
-                ] (_: { });
-                dependency-groups = { };
-              };
-            } "mkdir $out";
-          }
-          // lib.genAttrs cudaPackages mkNoop;
-
         # ---------- whisper-proxy stub: deps graph but no source code ----------
         # This keeps the Python-deps venv stable across app-source changes.
         # The stub preserves passthru.dependencies so transitive deps
@@ -151,7 +89,17 @@
         # numba's wheel links tbbpool.so against libtbb.so.12 (oneTBB);
         # add pkgs.tbb so auto-patchelf can patch the RPATH correctly.
         buildSystemFixesOverlay =
-          final: prev: {
+          final: prev:
+          let
+            mkNoop = name: pkgs.runCommandLocal "${name}-noop" {
+              passthru = {
+                dependencies = { };
+                optional-dependencies = { };
+                dependency-groups = { };
+              };
+            } "mkdir $out";
+          in
+          {
             # These sdist-only packages use setuptools as their build backend
             # but don't declare it in [build-system]; inject it via
             # nativeBuildInputs so its setup-hook populates NIX_PYPROJECT_PYTHONPATH.
@@ -166,12 +114,19 @@
             "numba" = prev."numba".overrideAttrs (old: {
               buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.tbb ];
             });
-            # torch ships a unified CPU+CUDA wheel; the CUDA .so files link
-            # against libcudart, libcublas, etc. which are not present in a
-            # CPU-only image.  Ignore those missing CUDA deps at patchelf time;
-            # the CUDA code paths will never be called.
+            # torch declares sympy (symbolic math) and networkx (graph ops) as
+            # runtime deps, but both are only used by torch.compile() / torch.fx
+            # which are never called during forced-alignment inference.
+            "sympy" = mkNoop "sympy";
+            "networkx" = mkNoop "networkx";
+            # torch ships test executables, C++ extension headers, and test .so
+            # files inside the wheel — none are needed for inference at runtime.
             "torch" = prev."torch".overrideAttrs (old: {
-              autoPatchelfIgnoreMissingDeps = true;
+              postInstall = (old.postInstall or "") + ''
+                site=$out/lib/python*/site-packages/torch
+                rm -rf $site/test $site/include $site/bin
+                rm -f  $site/lib/libtorchbind_test.so $site/lib/libjitbackend_test.so
+              '';
             });
           };
 
@@ -180,7 +135,6 @@
         }).overrideScope (lib.composeManyExtensions [
           pyproject-build-systems.overlays.wheel
           overlay
-          cpuOnlyOverlay
           buildSystemFixesOverlay
         ]);
 
