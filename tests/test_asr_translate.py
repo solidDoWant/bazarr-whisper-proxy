@@ -134,9 +134,7 @@ def test_translate_happy_path_200_valid_srt() -> None:
         patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
         patch("whisper_proxy.routes.asr.get_lingarr_client", return_value=mock_lingarr),
     ):
-        respx.post(TRANSCRIPTIONS_URL).mock(
-            return_value=httpx.Response(200, json=_VERBOSE_JSON_ES)
-        )
+        respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=_VERBOSE_JSON_ES))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
             resp = _post_asr(client)
@@ -160,9 +158,7 @@ def test_translate_cue_text_is_english_output() -> None:
         patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
         patch("whisper_proxy.routes.asr.get_lingarr_client", return_value=mock_lingarr),
     ):
-        respx.post(TRANSCRIPTIONS_URL).mock(
-            return_value=httpx.Response(200, json=_VERBOSE_JSON_ES)
-        )
+        respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=_VERBOSE_JSON_ES))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
             resp = _post_asr(client)
@@ -204,9 +200,7 @@ def test_translate_timing_matches_transcribe() -> None:
         patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
         patch("whisper_proxy.routes.asr.get_lingarr_client", return_value=mock_lingarr),
     ):
-        respx.post(TRANSCRIPTIONS_URL).mock(
-            return_value=httpx.Response(200, json=_VERBOSE_JSON_ES)
-        )
+        respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=_VERBOSE_JSON_ES))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
             translate_resp = _post_asr(client, task="translate", language="es")
@@ -231,9 +225,7 @@ def test_translate_cue_indices_sequential() -> None:
         patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
         patch("whisper_proxy.routes.asr.get_lingarr_client", return_value=mock_lingarr),
     ):
-        respx.post(TRANSCRIPTIONS_URL).mock(
-            return_value=httpx.Response(200, json=_VERBOSE_JSON_ES)
-        )
+        respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=_VERBOSE_JSON_ES))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
             resp = _post_asr(client)
@@ -393,9 +385,7 @@ async def test_lingarr_out_of_order_response_reconciled_correctly() -> None:
     response_data = [{"position": 2, "line": "Second"}, {"position": 1, "line": "First"}]
 
     with respx.mock:
-        respx.post(LINGARR_TRANSLATE_URL).mock(
-            return_value=httpx.Response(200, json=response_data)
-        )
+        respx.post(LINGARR_TRANSLATE_URL).mock(return_value=httpx.Response(200, json=response_data))
 
         settings = Settings(
             LINGARR_BASE_URL=AnyHttpUrl(LINGARR_BASE),
@@ -431,9 +421,7 @@ def test_lingarr_count_mismatch_returns_502() -> None:
         patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
         patch("whisper_proxy.routes.asr.get_lingarr_client", return_value=mock_lingarr),
     ):
-        respx.post(TRANSCRIPTIONS_URL).mock(
-            return_value=httpx.Response(200, json=_VERBOSE_JSON_ES)
-        )
+        respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=_VERBOSE_JSON_ES))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
             resp = _post_asr(client)
@@ -458,9 +446,7 @@ def test_lingarr_position_mismatch_returns_502() -> None:
         patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
         patch("whisper_proxy.routes.asr.get_lingarr_client", return_value=mock_lingarr),
     ):
-        respx.post(TRANSCRIPTIONS_URL).mock(
-            return_value=httpx.Response(200, json=_VERBOSE_JSON_ES)
-        )
+        respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=_VERBOSE_JSON_ES))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
             resp = _post_asr(client)
@@ -483,9 +469,7 @@ def test_empty_translated_line_replaced_with_nbsp() -> None:
         patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
         patch("whisper_proxy.routes.asr.get_lingarr_client", return_value=mock_lingarr),
     ):
-        respx.post(TRANSCRIPTIONS_URL).mock(
-            return_value=httpx.Response(200, json=_VERBOSE_JSON_ES)
-        )
+        respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=_VERBOSE_JSON_ES))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
             resp = _post_asr(client)
@@ -513,9 +497,7 @@ def test_lingarr_4xx_returns_502() -> None:
         patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
         patch("whisper_proxy.routes.asr.get_lingarr_client", return_value=mock_lingarr),
     ):
-        respx.post(TRANSCRIPTIONS_URL).mock(
-            return_value=httpx.Response(200, json=_VERBOSE_JSON_ES)
-        )
+        respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=_VERBOSE_JSON_ES))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
             resp = _post_asr(client)
@@ -534,9 +516,7 @@ def test_lingarr_5xx_returns_502() -> None:
         patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
         patch("whisper_proxy.routes.asr.get_lingarr_client", return_value=mock_lingarr),
     ):
-        respx.post(TRANSCRIPTIONS_URL).mock(
-            return_value=httpx.Response(200, json=_VERBOSE_JSON_ES)
-        )
+        respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=_VERBOSE_JSON_ES))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
             resp = _post_asr(client)
@@ -560,9 +540,7 @@ def test_lingarr_unreachable_returns_502() -> None:
         patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
         patch("whisper_proxy.routes.asr.get_lingarr_client", return_value=mock_lingarr),
     ):
-        respx.post(TRANSCRIPTIONS_URL).mock(
-            return_value=httpx.Response(200, json=_VERBOSE_JSON_ES)
-        )
+        respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=_VERBOSE_JSON_ES))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
             resp = _post_asr(client)
@@ -588,9 +566,7 @@ def test_lingarr_invalid_response_returns_502() -> None:
         patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
         patch("whisper_proxy.routes.asr.get_lingarr_client", return_value=mock_lingarr),
     ):
-        respx.post(TRANSCRIPTIONS_URL).mock(
-            return_value=httpx.Response(200, json=_VERBOSE_JSON_ES)
-        )
+        respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=_VERBOSE_JSON_ES))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
             resp = _post_asr(client)
@@ -606,7 +582,9 @@ async def test_lingarr_client_non_json_body_raises_invalid_response() -> None:
 
     with respx.mock:
         respx.post(LINGARR_TRANSLATE_URL).mock(
-            return_value=httpx.Response(200, text="not json", headers={"content-type": "text/plain"})
+            return_value=httpx.Response(
+                200, text="not json", headers={"content-type": "text/plain"}
+            )
         )
 
         settings = Settings(
@@ -672,9 +650,7 @@ def test_alignment_failed_during_translate_sends_fallback_to_lingarr() -> None:
         ),
         patch("whisper_proxy.routes.asr.get_lingarr_client", return_value=mock_lingarr),
     ):
-        respx.post(TRANSCRIPTIONS_URL).mock(
-            return_value=httpx.Response(200, json=_VERBOSE_JSON_ES)
-        )
+        respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=_VERBOSE_JSON_ES))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
             resp = _post_asr(client)
@@ -707,9 +683,7 @@ def test_translate_summary_includes_translate_ms_and_cues(
         patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
         patch("whisper_proxy.routes.asr.get_lingarr_client", return_value=mock_lingarr),
     ):
-        respx.post(TRANSCRIPTIONS_URL).mock(
-            return_value=httpx.Response(200, json=_VERBOSE_JSON_ES)
-        )
+        respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=_VERBOSE_JSON_ES))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with caplog.at_level("INFO"):
             with _make_client() as client:
@@ -750,7 +724,12 @@ def test_transcribe_summary_excludes_translate_fields(
             with _make_client() as client:
                 client.post(
                     "/asr",
-                    params={"task": "transcribe", "language": "en", "output": "srt", "encode": "false"},
+                    params={
+                        "task": "transcribe",
+                        "language": "en",
+                        "output": "srt",
+                        "encode": "false",
+                    },
                     files={"audio_file": ("audio.pcm", _SILENCE_PCM, "application/octet-stream")},
                 )
 
@@ -796,9 +775,7 @@ async def test_api_key_not_in_logs(
             )
 
     for record in caplog.records:
-        assert api_key not in record.getMessage(), (
-            f"API key leaked in log: {record.getMessage()}"
-        )
+        assert api_key not in record.getMessage(), f"API key leaked in log: {record.getMessage()}"
 
 
 # ---------------------------------------------------------------------------
@@ -822,9 +799,7 @@ def test_contract_replay_translate_shape() -> None:
         patch("whisper_proxy.routes.asr.align", new=AsyncMock(return_value=_FAKE_WORDS)),
         patch("whisper_proxy.routes.asr.get_lingarr_client", return_value=mock_lingarr),
     ):
-        respx.post(TRANSCRIPTIONS_URL).mock(
-            return_value=httpx.Response(200, json=_VERBOSE_JSON_ES)
-        )
+        respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=_VERBOSE_JSON_ES))
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
             resp = client.post(

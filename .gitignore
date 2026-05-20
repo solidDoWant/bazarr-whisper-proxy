@@ -13,3 +13,7 @@ build/
 .DS_Store
 .env
 *.env.local
+
+# e2e fixture media is built lazily by tests/e2e/fixtures/build.py;
+# only the manifest is committed.
+tests/e2e/fixtures/media/

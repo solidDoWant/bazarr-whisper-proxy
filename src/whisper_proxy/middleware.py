@@ -16,6 +16,7 @@ def _fmt_timing(v: object) -> object:
         return round(v, 2)
     return v
 
+
 _log = logging.getLogger(__name__)
 
 

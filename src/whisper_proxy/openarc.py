@@ -6,6 +6,7 @@ from typing import Any, Literal, cast
 import httpx
 
 from whisper_proxy.config import Settings
+from whisper_proxy.lang import alpha2_to_openarc_language
 
 
 class OpenArcError(Exception):
@@ -66,8 +67,14 @@ class OpenArcClient:
             "model": self._model,
             "response_format": "verbose_json",
         }
-        if language is not None:
-            data["openarc_asr"] = json.dumps({"qwen3_asr": {"language": language}})
+        # Qwen3-ASR's `language` param wants the capitalised English name
+        # ("English", "Spanish", …) — alpha-2 codes like "en" raise an
+        # `Unsupported language` ValueError inside OpenArc that surfaces as a
+        # dropped connection. Translate; if we don't have a mapping, omit
+        # the param and let OpenArc auto-detect.
+        openarc_lang = alpha2_to_openarc_language(language)
+        if openarc_lang is not None:
+            data["openarc_asr"] = json.dumps({"qwen3_asr": {"language": openarc_lang}})
 
         try:
             resp = await self._client.post(
@@ -102,7 +109,11 @@ class OpenArcClient:
             raise OpenArcUnavailable(str(exc)) from exc
 
         self._check_status(resp)
-        for entry in resp.json():
+        body = resp.json()
+        # OpenArc wraps the per-model entries in `{"models": [...]}`; older
+        # builds returned a bare list. Accept both.
+        entries = body.get("models", []) if isinstance(body, dict) else body
+        for entry in entries:
             if entry.get("model_name") != self._model:
                 continue
 

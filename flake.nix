@@ -42,7 +42,22 @@
 
         # ---------- uv2nix workspace & base overlay ----------
 
-        workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
+        # Only include files uv2nix needs to resolve the workspace.  This
+        # prevents changes to tests/, docs/, scripts/, etc. from producing a
+        # new store path for workspaceRoot, which would otherwise invalidate
+        # the Python-deps layer in the OCI image even when no package
+        # dependencies have changed.
+        filteredWorkspaceRoot = lib.cleanSourceWith {
+          src = ./.;
+          filter =
+            path: _type:
+            let
+              rel = lib.removePrefix (toString ./. + "/") (toString path);
+            in
+            rel == "pyproject.toml" || rel == "uv.lock" || lib.hasPrefix "src/" rel;
+        };
+
+        workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = filteredWorkspaceRoot; };
 
         overlay = workspace.mkPyprojectOverlay {
           sourcePreference = "wheel";
@@ -311,10 +326,17 @@
             pkgs.docker
             pkgs.docker-compose
             pkgs.gh
+            # e2e harness: synthesizes fixture media (tests/e2e/fixtures/build.py)
+            pkgs.espeak-ng
+            # e2e harness: convenient REST poking from scripts/e2e.sh
+            pkgs.curl
+            pkgs.jq
           ];
 
           shellHook = ''
             export UV_PYTHON="${python}/bin/python3"
+            # Put scripts/ on PATH so `e2e` (harness entrypoint) is callable.
+            export PATH="$PWD/scripts:$PATH"
 
             DOCKER_SOCK="/tmp/docker.sock"
             export DOCKER_HOST="unix://$DOCKER_SOCK"

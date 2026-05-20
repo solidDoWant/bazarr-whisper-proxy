@@ -103,8 +103,7 @@ class LingarrClient:
         sent_positions = {pos for pos, _ in lines}
 
         payload_lines = [
-            {"position": pos, "line": text if text.strip() else _NBSP}
-            for pos, text in lines
+            {"position": pos, "line": text if text.strip() else _NBSP} for pos, text in lines
         ]
 
         body = {

@@ -1,0 +1,32 @@
+{
+  "_comment": "Fixture audio specs. build.py reads this, synthesizes via espeak-ng, wraps each in a minimal MKV. The 'tmdb_id' / 'movie_*' fields are used by the Radarr provisioner — Radarr cross-checks tmdbIds against TMDB before accepting a movie record, so the IDs must point at real (public-domain) films.",
+  "clips": [
+    {
+      "slug": "en_pangram",
+      "language": "en",
+      "espeak_voice": "en",
+      "espeak_speed": 145,
+      "text": "The quick brown fox jumps over the lazy dog. The early bird catches the worm. Sphinx of black quartz, judge my vow.",
+      "expected_words": ["quick", "brown", "fox", "lazy", "dog", "bird"],
+      "movie_title": "Plan 9 from Outer Space",
+      "movie_year": 1957,
+      "tmdb_id": 10513,
+      "radarr_folder": "Plan.9.from.Outer.Space.1957",
+      "filename": "Plan.9.from.Outer.Space.1957.mkv"
+    },
+    {
+      "slug": "es_pangram",
+      "language": "es",
+      "espeak_voice": "es",
+      "espeak_speed": 145,
+      "text": "El veloz murciélago hindú comía feliz cardillo y kiwi. La cigüeña tocaba el saxofón detrás del palenque de paja.",
+      "expected_words": ["veloz", "feliz", "kiwi", "tocaba"],
+      "expected_translated_words": ["bat", "happy", "kiwi", "play", "stork", "ate", "behind"],
+      "movie_title": "Night of the Living Dead",
+      "movie_year": 1968,
+      "tmdb_id": 10331,
+      "radarr_folder": "Night.of.the.Living.Dead.1968",
+      "filename": "Night.of.the.Living.Dead.1968.mkv"
+    }
+  ]
+}

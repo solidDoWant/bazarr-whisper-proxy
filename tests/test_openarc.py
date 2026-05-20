@@ -61,9 +61,28 @@ async def test_transcribe_with_language_sends_openarc_asr() -> None:
     body = captured["body"]
     assert b"verbose_json" in body
     assert b"test-model" in body
-    assert json.dumps({"qwen3_asr": {"language": "en"}}).encode() in body
+    # OpenArc's Qwen3-ASR validates the language against a capitalised
+    # English-name list (`English`, `Spanish`, …) — alpha-2 codes hang the
+    # request. The client translates before sending.
+    assert json.dumps({"qwen3_asr": {"language": "English"}}).encode() in body
     assert b"audio.wav" in body
     assert FAKE_AUDIO in body
+
+
+async def test_transcribe_with_unsupported_language_omits_openarc_asr() -> None:
+    """For languages not in OpenArc's supported list, omit the param entirely."""
+    captured: dict[str, bytes] = {}
+
+    def capture(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.content
+        return httpx.Response(200, json=VERBOSE_JSON)
+
+    with respx.mock:
+        respx.post(TRANSCRIPTIONS_URL).mock(side_effect=capture)
+        async with OpenArcClient(make_settings()) as c:
+            await c.transcribe(FAKE_AUDIO, language="xx")  # not in the map
+
+    assert b"openarc_asr" not in captured["body"]
 
 
 # --- Criterion 2: transcribe without language omits openarc_asr ---
@@ -162,6 +181,22 @@ async def test_model_state_unrecognised_status_returns_unknown() -> None:
         )
         async with OpenArcClient(make_settings()) as c:
             assert await c.model_state() == "unknown"
+
+
+async def test_model_state_dict_wrapped_response() -> None:
+    """OpenArc 1.x wraps entries in {"models": [...]} — accept both shapes."""
+    with respx.mock:
+        respx.get(STATUS_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "total_loaded_models": 1,
+                    "models": [{"model_name": "test-model", "status": "loaded"}],
+                },
+            )
+        )
+        async with OpenArcClient(make_settings()) as c:
+            assert await c.model_state() == "loaded"
 
 
 # --- Criterion 5: 4xx → OpenArcBadRequest with detail ---

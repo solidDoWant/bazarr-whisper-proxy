@@ -1,0 +1,119 @@
+# End-to-end test stack — brings up Bazarr / Radarr / Lingarr / LibreTranslate
+# and the bridge under test, all wired together. OpenArc is NOT in this stack
+# (model + budget requirements make it a poor fit for ephemeral compose). The
+# bridge points at a remote OpenArc via OPENARC_E2E_BASE_URL.
+#
+# All image tags are pinned. Bump procedure: see docs/e2e.md.
+
+name: bazarr-whisper-proxy-e2e
+
+services:
+  bazarr:
+    image: linuxserver/bazarr:1.5.6
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: UTC
+    volumes:
+      - bazarr-config:/config
+      - media:/media
+    ports:
+      - "${BAZARR_PORT:-6767}:6767"
+    healthcheck:
+      # /api/system/status is auth-gated; /healthz is not.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:6767/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+    depends_on:
+      whisper-proxy:
+        condition: service_healthy
+      radarr:
+        condition: service_healthy
+
+  radarr:
+    image: linuxserver/radarr:6.1.1
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: UTC
+    volumes:
+      - radarr-config:/config
+      - media:/media
+    ports:
+      - "${RADARR_PORT:-7878}:7878"
+    healthcheck:
+      # Initialize.json is served before the API key is set up; good liveness probe.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7878/initialize.json"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+
+  lingarr:
+    image: lingarr/lingarr:1.2.4
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: UTC
+    volumes:
+      - lingarr-config:/app/config
+      - media:/media
+    ports:
+      - "${LINGARR_PORT:-9876}:8080"
+    healthcheck:
+      # Lingarr's unauth health endpoint lives at /health, not /api/health.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+
+  libretranslate:
+    image: libretranslate/libretranslate:v1.9.5
+    # Load only the language pairs the fixture set exercises so cold-start
+    # stays under a minute (criterion in spec 16 §in-scope).
+    # en is loaded implicitly as the pivot; add others as the fixture set
+    # grows. Values comma-separated (no spaces).
+    environment:
+      LT_LOAD_ONLY: "${LT_LOAD_ONLY:-en,es}"
+      LT_DISABLE_WEB_UI: "true"
+      LT_UPDATE_MODELS: "false"
+    ports:
+      - "${LIBRETRANSLATE_PORT:-5000}:5000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5000/languages"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      # Model downloads on first boot can take a while.
+      start_period: 120s
+
+  whisper-proxy:
+    # Loaded into the local Docker daemon by scripts/e2e.sh via
+    # `nix build .#dockerImage | docker load`. Tag is fixed by flake.nix.
+    image: bazarr-whisper-proxy:latest
+    environment:
+      OPENARC_BASE_URL: "${OPENARC_E2E_BASE_URL}"
+      OPENARC_MODEL: "${OPENARC_E2E_MODEL:-qwen3-asr-0_6b-int8-asym}"
+      LINGARR_BASE_URL: "http://lingarr:8080"
+      LINGARR_API_KEY: "${LINGARR_API_KEY:-e2e-placeholder-key}"
+      LINGARR_TARGET_LANGUAGE: "en"
+      LOG_LEVEL: "${WHISPER_PROXY_LOG_LEVEL:-INFO}"
+      LOG_FORMAT: text
+    ports:
+      - "${WHISPER_PROXY_PORT:-9000}:9000"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9000/healthz',timeout=2).status==200 else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+volumes:
+  bazarr-config:
+  radarr-config:
+  lingarr-config:
+  media:
