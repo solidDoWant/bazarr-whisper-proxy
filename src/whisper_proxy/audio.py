@@ -34,6 +34,18 @@ def head_clip(
     return pcm_bytes[:max_bytes] if len(pcm_bytes) > max_bytes else pcm_bytes
 
 
+def window_clip(
+    pcm_bytes: bytes,
+    start_sample: int,
+    window_samples: int,
+    channels: int = 1,
+) -> bytes:
+    frame_size = channels * 2
+    start_byte = start_sample * frame_size
+    end_byte = (start_sample + window_samples) * frame_size
+    return pcm_bytes[start_byte:end_byte]
+
+
 def assert_within_size_limit(pcm_bytes: bytes, max_bytes: int) -> None:
     if len(pcm_bytes) > max_bytes:
         raise AudioTooLarge(f"audio too large: {len(pcm_bytes)} > {max_bytes} bytes")

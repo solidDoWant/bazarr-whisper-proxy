@@ -20,6 +20,11 @@ def test_defaults() -> None:
     assert s.ALIGNER_MODEL == "mms-1b-all"
     assert s.ALIGNER_BATCH_SIZE == 16
     assert s.ALIGNER_WINDOW_SEC == 30
+    assert s.LANG_DETECT_WINDOW_SEC == 10
+    assert s.LANG_DETECT_MAX_ATTEMPTS == 6
+    assert s.LANG_DETECT_SHIFT_SEC == 15
+    assert s.LANG_DETECT_MIN_TEXT_CHARS == 20
+    assert s.LANG_DETECT_HALLUCINATION_PATTERNS == ""
     assert s.LANG_DETECT_HEAD_SEC == 30
     assert s.CUE_MAX_CHARS == 84
     assert s.CUE_MAX_SEC == 6.0
@@ -85,6 +90,11 @@ _REQUIRED_VARS = [
     "ALIGNER_MODEL",
     "ALIGNER_BATCH_SIZE",
     "ALIGNER_WINDOW_SEC",
+    "LANG_DETECT_WINDOW_SEC",
+    "LANG_DETECT_MAX_ATTEMPTS",
+    "LANG_DETECT_SHIFT_SEC",
+    "LANG_DETECT_MIN_TEXT_CHARS",
+    "LANG_DETECT_HALLUCINATION_PATTERNS",
     "LANG_DETECT_HEAD_SEC",
     "CUE_MAX_CHARS",
     "CUE_MAX_SEC",

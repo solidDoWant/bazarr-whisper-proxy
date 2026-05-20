@@ -23,7 +23,15 @@ class Settings(BaseSettings):
     ALIGNER_BATCH_SIZE: int = 16
     ALIGNER_WINDOW_SEC: int = 30
 
-    # Language detection
+    # Language detection — center-first shifting-window algorithm (task 15)
+    LANG_DETECT_WINDOW_SEC: int = 10
+    LANG_DETECT_MAX_ATTEMPTS: int = 6
+    LANG_DETECT_SHIFT_SEC: int = 15
+    LANG_DETECT_MIN_TEXT_CHARS: int = 20
+    # comma-separated substrings stripped from transcription text before the length check
+    LANG_DETECT_HALLUCINATION_PATTERNS: str = ""
+
+    # no-op; superseded by LANG_DETECT_WINDOW_SEC (kept for backward compatibility)
     LANG_DETECT_HEAD_SEC: int = 30
 
     # SRT assembly

@@ -72,4 +72,4 @@ async def record_stage(name: str) -> AsyncGenerator[None]:
         elapsed_ms = (time.perf_counter() - start) * 1000
         timings = stage_timings_var.get(None)
         if timings is not None:
-            timings[name] = elapsed_ms
+            timings[name] = timings.get(name, 0.0) + elapsed_ms

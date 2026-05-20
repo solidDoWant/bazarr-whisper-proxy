@@ -8,6 +8,14 @@ from starlette.responses import Response
 
 from whisper_proxy.logging_setup import request_id_var, stage_timings_var
 
+
+def _fmt_timing(v: object) -> object:
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return round(v, 2)
+    return v
+
 _log = logging.getLogger(__name__)
 
 
@@ -43,7 +51,7 @@ class CorrelationMiddleware(BaseHTTPMiddleware):
                     "path": request.url.path,
                     "status": status,
                     "total_ms": elapsed,
-                    **{k: round(v, 2) for k, v in timings.items()},
+                    **{k: _fmt_timing(v) for k, v in timings.items()},
                 },
             )
             request_id_var.reset(id_tok)
