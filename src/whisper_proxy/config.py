@@ -43,6 +43,14 @@ class Settings(BaseSettings):
     # Audio
     MAX_AUDIO_BYTES: int = 200_000_000
 
+    # Lingarr translation backend (Phase 2 — task=translate)
+    # Unset → task=translate returns 422 (feature disabled).
+    LINGARR_BASE_URL: AnyHttpUrl | None = None
+    LINGARR_API_KEY: str = ""
+    LINGARR_TIMEOUT: int = 600
+    LINGARR_TARGET_LANGUAGE: str = "en"
+    LINGARR_DEFAULT_MEDIA_TYPE: str = "Episode"
+
     # Logging
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: Literal["json", "text"] = "json"
@@ -61,3 +69,11 @@ class Settings(BaseSettings):
         raise ValueError(
             f"CUE_MIN_SEC ({self.CUE_MIN_SEC}) must be less than CUE_MAX_SEC ({self.CUE_MAX_SEC})"
         )
+
+    @model_validator(mode="after")
+    def lingarr_api_key_required(self) -> Settings:
+        if self.LINGARR_BASE_URL is not None and not self.LINGARR_API_KEY:
+            raise ValueError(
+                "LINGARR_API_KEY must be set when LINGARR_BASE_URL is configured"
+            )
+        return self

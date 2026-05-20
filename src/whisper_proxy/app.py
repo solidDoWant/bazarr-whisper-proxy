@@ -1,11 +1,12 @@
 import sys
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI
 from pydantic import ValidationError
 
 from whisper_proxy.config import Settings
+from whisper_proxy.lingarr import LingarrClient
 from whisper_proxy.logging_setup import configure_logging
 from whisper_proxy.middleware import CorrelationMiddleware
 from whisper_proxy.openarc import OpenArcClient
@@ -23,8 +24,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     configure_logging(settings.LOG_LEVEL, settings.LOG_FORMAT)
     app.state.settings = settings
 
-    async with OpenArcClient(settings) as client:
-        app.state.openarc_client = client
+    async with AsyncExitStack() as stack:
+        openarc_client = await stack.enter_async_context(OpenArcClient(settings))
+        app.state.openarc_client = openarc_client
+
+        if settings.LINGARR_BASE_URL is not None:
+            lingarr_client = await stack.enter_async_context(LingarrClient(settings))
+            app.state.lingarr_client = lingarr_client
+        else:
+            app.state.lingarr_client = None
+
         yield
 
 

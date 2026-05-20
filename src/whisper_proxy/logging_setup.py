@@ -73,3 +73,10 @@ async def record_stage(name: str) -> AsyncGenerator[None]:
         timings = stage_timings_var.get(None)
         if timings is not None:
             timings[name] = timings.get(name, 0.0) + elapsed_ms
+
+
+def log_extra(key: str, value: float) -> None:
+    """Store a non-timing scalar in the current request's summary dict."""
+    timings = stage_timings_var.get(None)
+    if timings is not None:
+        timings[key] = value
