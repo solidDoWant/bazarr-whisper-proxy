@@ -1,0 +1,115 @@
+# Getting-started compose for bazarr-whisper-proxy + Bazarr + Lingarr.
+#
+# Before starting:
+#   1. Copy the env template and fill in your Whisper endpoint:
+#        cp config.example.env .env
+#        # Set OPENARC_BASE_URL to your OpenArc (or Whisper-compatible) endpoint
+#   2. Start the core stack:
+#        docker compose -f compose.example.yml up -d
+#   3. (Optional) Start with translation support:
+#        docker compose -f compose.example.yml --profile translate up -d
+#
+# In Bazarr: Settings → Subtitles → Transcribe AI provider → Whisper ASR Webservice
+#   URL: http://whisper-proxy:9000
+#
+# In Lingarr (translate profile only): connect to LibreTranslate at
+#   http://libretranslate:5000
+
+name: bazarr-whisper-proxy
+
+services:
+
+  # ---------- Whisper proxy (required) ----------
+
+  whisper-proxy:
+    image: ghcr.io/soliddowant/bazarr-whisper-proxy:latest
+    environment:
+      # Required: your OpenArc or Whisper-compatible API endpoint.
+      OPENARC_BASE_URL: "${OPENARC_BASE_URL:?Set OPENARC_BASE_URL in .env}"
+      OPENARC_MODEL: "${OPENARC_MODEL:-qwen3-asr-0_6b-int8-asym}"
+
+      # Translation via Lingarr — remove or leave blank to disable.
+      LINGARR_BASE_URL: "${LINGARR_BASE_URL:-}"
+      LINGARR_API_KEY: "${LINGARR_API_KEY:-}"
+      LINGARR_TARGET_LANGUAGE: "${LINGARR_TARGET_LANGUAGE:-en}"
+
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      LOG_FORMAT: "${LOG_FORMAT:-json}"
+    ports:
+      - "${WHISPER_PROXY_PORT:-9000}:9000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9000/healthz',timeout=2).status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  # ---------- Bazarr (required) ----------
+  # Note: Bazarr requires a Radarr and/or Sonarr instance to manage your media
+  # library. Those are out of scope for this example — connect Bazarr to your
+  # existing Radarr/Sonarr via Settings → Sonarr / Settings → Radarr inside
+  # the Bazarr UI.
+
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    environment:
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      TZ: "${TZ:-UTC}"
+    volumes:
+      - bazarr-config:/config
+      - "${MEDIA_DIR:-./media}:/media"
+    ports:
+      - "${BAZARR_PORT:-6767}:6767"
+    restart: unless-stopped
+    depends_on:
+      whisper-proxy:
+        condition: service_healthy
+
+  # ---------- Translation stack (optional — enable with --profile translate) ----------
+
+  lingarr:
+    profiles: [translate]
+    image: lingarr/lingarr:latest
+    environment:
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      TZ: "${TZ:-UTC}"
+    volumes:
+      - lingarr-config:/app/config
+      - "${MEDIA_DIR:-./media}:/media"
+    ports:
+      - "${LINGARR_PORT:-9876}:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  libretranslate:
+    profiles: [translate]
+    image: libretranslate/libretranslate:latest
+    environment:
+      # Comma-separated list of language codes to load. "en" is always the
+      # pivot; add any target languages you need (e.g. en,es,de,fr).
+      LT_LOAD_ONLY: "${LT_LOAD_ONLY:-en}"
+      LT_DISABLE_WEB_UI: "true"
+      LT_UPDATE_MODELS: "false"
+    ports:
+      - "${LIBRETRANSLATE_PORT:-5000}:5000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5000/languages"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      # Language model downloads on first boot can take several minutes.
+      start_period: 180s
+
+volumes:
+  bazarr-config:
+  lingarr-config:

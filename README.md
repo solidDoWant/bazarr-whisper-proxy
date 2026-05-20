@@ -1,48 +1,18 @@
 # bazarr-whisper-proxy
 
-Drop-in replacement for `bazarr-openai-whisperbridge`. Sits between
-[Bazarr](https://github.com/morpheus65535/bazarr) and a self-hosted
-[OpenArc](https://github.com/morioka/openarc) (Qwen3-ASR) backend, adding
-forced alignment for accurate per-cue timing and valid SRT output.
+Proxies transcription requests from Bazarr to Whisper API services (OpenAI or self-hosted). This has several advantages over other similar projects:
+* It's fully compatible with [OpenArc](https://github.com/morioka/openarc) with Qwen3-ASR-0.6B, which requires a non-standard `openarc_asr` parameter
+* All transcribed text is force-aligned via [ctc-forced-aligner](https://github.com/MahmoudAshraf97/ctc-forced-aligner) so that text lines up with spoken audio
+* Transcribed audio is chunked/split into cues based upon language heuristics with word-level timing 
+* Language detection works rather than returning a static, pre-set value
+* Translation is fully supported when a [Lingarr](https://github.com/lingarr-translate/lingarr) endpoint is provided
 
-Speaks the `whisper-asr-webservice` protocol to Bazarr and the OpenAI-compat
-`/v1/audio/transcriptions` API to OpenArc.
+Downstream API contract matches [whisper-asr-webservice](https://github.com/ahmetoner/whisper-asr-webservice) (`/asr`), which Bazarr uses instead of OpenAI's Whisper contract (`/v1/audio/transcription`).
+Upstream translation service is expected to match OpenAI's Whisper API.
 
 ## How to run
 
-### Prerequisites
-
-- [Nix](https://nixos.org/download/) with flakes enabled
-
-### Development
-
-```sh
-# Enter the dev shell — provides Python 3.15, uv, ruff, mypy, pytest
-nix develop
-
-# Install Python dependencies into a local .venv
-uv sync
-
-# Start the server (binds to 0.0.0.0:9000)
-uv run python -m whisper_proxy
-
-# Verify
-curl -sf http://localhost:9000/healthz
-# → {"status":"ok"}
-```
-
-### Lint, type-check, and test
-
-```sh
-# Inside nix develop:
-ruff check src tests
-ruff format --check src tests
-mypy --strict src
-pytest tests/
-
-# Or run everything via Nix (hermetic):
-nix flake check
-```
+Container images are available at [gchr.io/soliddowant/bazarr-whisper-proxy](https://gchr.io/soliddowant/bazarr-whisper-proxy). For an example deployment, see [this Docker compose file](./compose.example.yml).
 
 ### Configuration
 
