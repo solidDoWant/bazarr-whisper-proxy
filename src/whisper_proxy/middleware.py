@@ -14,7 +14,7 @@ _log = logging.getLogger(__name__)
 def _validated_uuid(value: str) -> str:
     try:
         uuid.UUID(value)
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         return str(uuid.uuid4())
     return value
 

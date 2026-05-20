@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import struct
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -88,7 +87,9 @@ def test_happy_path_returns_200_valid_srt() -> None:
     ):
         respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=VERBOSE_JSON))
         respx.get(STATUS_URL).mock(
-            return_value=httpx.Response(200, json=[{"model_name": "qwen3-asr-0_6b-int8-asym", "status": "loaded"}])
+            return_value=httpx.Response(
+                200, json=[{"model_name": "qwen3-asr-0_6b-int8-asym", "status": "loaded"}]
+            )
         )
         with _make_client() as client:
             resp = _post_asr(client)
@@ -203,7 +204,10 @@ def test_oversized_audio_returns_413() -> None:
 
     with (
         respx.mock,
-        patch("whisper_proxy.routes.asr.assert_within_size_limit", side_effect=AudioTooLarge("too big")),
+        patch(
+            "whisper_proxy.routes.asr.assert_within_size_limit",
+            side_effect=AudioTooLarge("too big"),
+        ),
     ):
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
@@ -223,7 +227,11 @@ def test_openarc_unavailable_returns_502() -> None:
 
     with (
         respx.mock,
-        patch.object(OpenArcClient, "transcribe", new=AsyncMock(side_effect=OpenArcUnavailable("connection refused"))),
+        patch.object(
+            OpenArcClient,
+            "transcribe",
+            new=AsyncMock(side_effect=OpenArcUnavailable("connection refused")),
+        ),
     ):
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
@@ -242,7 +250,11 @@ def test_openarc_bad_request_returns_502() -> None:
 
     with (
         respx.mock,
-        patch.object(OpenArcClient, "transcribe", new=AsyncMock(side_effect=OpenArcBadRequest("model not loaded"))),
+        patch.object(
+            OpenArcClient,
+            "transcribe",
+            new=AsyncMock(side_effect=OpenArcBadRequest("model not loaded")),
+        ),
     ):
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
@@ -261,7 +273,9 @@ def test_openarc_inference_error_returns_502() -> None:
 
     with (
         respx.mock,
-        patch.object(OpenArcClient, "transcribe", new=AsyncMock(side_effect=OpenArcInferenceError("OOM"))),
+        patch.object(
+            OpenArcClient, "transcribe", new=AsyncMock(side_effect=OpenArcInferenceError("OOM"))
+        ),
     ):
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
         with _make_client() as client:
@@ -412,5 +426,5 @@ def test_contract_replay_broken_writer_triggers_validation_gate() -> None:
     # Route's internal pysrt gate fires → 500
     assert resp.status_code == 500
     # And confirm that pysrt would indeed reject the bad output
-    with pytest.raises(Exception):
+    with pytest.raises(pysrt.Error):
         pysrt.from_string("this is not valid srt\n", error_handling=pysrt.ERROR_RAISE)

@@ -53,6 +53,10 @@ python_version = "3.14"
 strict = true
 files = ["src"]
 
+[[tool.mypy.overrides]]
+module = ["onnxruntime", "ctc_forced_aligner", "pysrt"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

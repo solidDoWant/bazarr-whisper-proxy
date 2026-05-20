@@ -1,7 +1,7 @@
 import json
 from dataclasses import dataclass, field
 from types import TracebackType
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import httpx
 
@@ -108,7 +108,7 @@ class OpenArcClient:
 
             status = entry.get("status")
             if status in ("loaded", "loading", "unloaded"):
-                return status
+                return cast(Literal["loaded", "loading", "unloaded"], status)
             return "unknown"
 
         return "unknown"
