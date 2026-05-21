@@ -183,6 +183,8 @@ async def asr(
             max_sec=settings.CUE_MAX_SEC,
             min_sec=settings.CUE_MIN_SEC,
             silence_ms=settings.CUE_SILENCE_MS,
+            min_chars=settings.CUE_MIN_CHARS,
+            max_merge_gap_sec=settings.CUE_MAX_MERGE_GAP_SEC,
         )
         cues = words_to_cues(words, policy)
 

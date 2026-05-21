@@ -123,7 +123,7 @@ def test_min_sec_enforced():
         Word(token="Hi.", start_sec=0.0, end_sec=0.2),  # span 0.2 s < min 1.0
         Word(token="Bye.", start_sec=2.0, end_sec=2.2),
     ]
-    policy = SegmentPolicy(min_sec=1.0)
+    policy = SegmentPolicy(min_sec=1.0, min_chars=0)
     cues = words_to_cues(words, policy)
     assert cues[0].end_sec == pytest.approx(1.0), "min_sec not applied"
 
@@ -133,7 +133,7 @@ def test_min_sec_clamped_to_next_start():
         Word(token="Hi.", start_sec=0.0, end_sec=0.1),
         Word(token="Bye.", start_sec=0.4, end_sec=0.6),
     ]
-    policy = SegmentPolicy(min_sec=1.0)
+    policy = SegmentPolicy(min_sec=1.0, min_chars=0)
     cues = words_to_cues(words, policy)
     # min_sec would push end to 1.0 but next start is 0.4
     assert cues[0].end_sec == pytest.approx(0.4), "not clamped to next start"
@@ -199,7 +199,9 @@ def test_sentence_final_punctuation_ends_cue():
         Word(token="World", start_sec=0.6, end_sec=0.9),
         Word(token="here.", start_sec=1.0, end_sec=1.4),
     ]
-    cues = words_to_cues(words, DEFAULT_POLICY)
+    # min_chars=0 disables the merge pass so we test raw segmentation.
+    policy = SegmentPolicy(min_chars=0)
+    cues = words_to_cues(words, policy)
     # "Hello." should be its own cue; "World here." its own
     assert len(cues) == 2
     assert "Hello." in cues[0].lines[0]
@@ -208,7 +210,9 @@ def test_sentence_final_punctuation_ends_cue():
 
 def test_unicode_sentence_final_punctuation():
     words = _load_words("unicode_punct.json")
-    cues = words_to_cues(words, DEFAULT_POLICY)
+    # min_chars=0 disables the merge pass so we test raw segmentation.
+    policy = SegmentPolicy(min_chars=0)
+    cues = words_to_cues(words, policy)
     # Each token ending with CJK sentence-final punct should end its cue
     sentence_ends = [w for w in words if w.token[-1] in "。！？"]  # noqa: RUF001
     assert len(cues) == len(sentence_ends)
@@ -221,7 +225,8 @@ def test_unicode_sentence_final_punctuation():
 
 def test_silence_split_within_sentence():
     words = _load_words("silence_break.json")
-    policy = SegmentPolicy(silence_ms=700)
+    # min_chars=0 disables the merge pass so we test that silence creates the break.
+    policy = SegmentPolicy(silence_ms=700, min_chars=0)
     cues = words_to_cues(words, policy)
     # Gap between word index 2 (end=1.4) and 3 (start=2.2) is 800ms > 700ms
     # So there should be at least 2 cues
@@ -251,3 +256,37 @@ def test_trailing_blank_line():
     assert text.endswith("\n\n") or text.endswith("\n"), "no trailing newline"
     # Must end with at least one blank line (two consecutive newlines)
     assert text.endswith("\n\n"), "output does not end with trailing blank line"
+
+
+# ---------------------------------------------------------------------------
+# Short-cue merge pass (min_chars / max_merge_gap_sec)
+# ---------------------------------------------------------------------------
+
+
+def test_short_cue_merged_with_neighbor():
+    # "it." is 3 chars < default min_chars=20; should merge into the previous cue.
+    words = [
+        Word(token="Come", start_sec=0.0, end_sec=0.3),
+        Word(token="on,", start_sec=0.35, end_sec=0.6),
+        Word(token="do", start_sec=0.65, end_sec=0.9),
+        Word(token="it.", start_sec=2.0, end_sec=2.5),  # separated by 1.1 s silence
+    ]
+    policy = SegmentPolicy(min_chars=20, max_merge_gap_sec=1.5)
+    cues = words_to_cues(words, policy)
+    # All four words should end up in one cue (gap 1.1 s < 1.5 s, text fits).
+    assert len(cues) == 1
+    full_text = " ".join(cues[0].lines)
+    assert "Come on, do it." in full_text
+
+
+def test_large_gap_prevents_merge():
+    # Gap of 3 s exceeds max_merge_gap_sec=1.5, so the short cue is kept alone.
+    words = [
+        Word(token="Come", start_sec=0.0, end_sec=0.3),
+        Word(token="on,", start_sec=0.35, end_sec=0.6),
+        Word(token="do", start_sec=0.65, end_sec=0.9),
+        Word(token="it.", start_sec=3.9, end_sec=4.4),  # 3 s gap
+    ]
+    policy = SegmentPolicy(min_chars=20, max_merge_gap_sec=1.5)
+    cues = words_to_cues(words, policy)
+    assert len(cues) == 2

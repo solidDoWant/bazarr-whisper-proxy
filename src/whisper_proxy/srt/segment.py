@@ -18,6 +18,11 @@ class SegmentPolicy:
     max_sec: float = 6.0
     min_sec: float = 1.0
     silence_ms: int = 700
+    # Cues shorter than min_chars are merged with a neighbor when budget allows.
+    # Set to 0 to disable merging.
+    min_chars: int = 20
+    # Don't merge across gaps larger than this (seconds).
+    max_merge_gap_sec: float = 1.5
 
 
 class Cue(NamedTuple):
@@ -30,13 +35,11 @@ def _is_sentence_end(token: str) -> bool:
     return bool(token) and token[-1] in _SENTENCE_FINAL
 
 
-def _split_to_lines(words: list[Word]) -> tuple[str, ...]:
-    """Wrap words into at most two lines, splitting near the text midpoint."""
-    text = " ".join(w.token for w in words)
-    if len(words) == 1 or len(text) <= 42:
+def _split_text(text: str) -> tuple[str, ...]:
+    """Wrap text into at most two display lines, splitting near the midpoint."""
+    tokens = text.split()
+    if len(tokens) == 1 or len(text) <= 42:
         return (text,)
-
-    tokens = [w.token for w in words]
     mid = len(text) // 2
     best_idx = 1
     best_dist = float("inf")
@@ -48,8 +51,85 @@ def _split_to_lines(words: list[Word]) -> tuple[str, ...]:
             best_dist = dist
             best_idx = i + 1
         pos += 1  # space
-
     return (" ".join(tokens[:best_idx]), " ".join(tokens[best_idx:]))
+
+
+def _split_to_lines(words: list[Word]) -> tuple[str, ...]:
+    """Wrap words into at most two lines, splitting near the text midpoint."""
+    return _split_text(" ".join(w.token for w in words))
+
+
+def _merge_short_cues(cues: list[Cue], policy: SegmentPolicy) -> list[Cue]:
+    """Merge cues shorter than min_chars with a neighbor when budget allows.
+
+    Prefers merging with the previous cue (natural continuation), falls back
+    to the next. Repeats until no further merges are possible.
+    """
+    if policy.min_chars == 0 or len(cues) <= 1:
+        return cues
+
+    changed = True
+    while changed:
+        changed = False
+        result: list[Cue] = []
+        i = 0
+        while i < len(cues):
+            cue = cues[i]
+            text = " ".join(cue.lines)
+
+            if len(text) >= policy.min_chars:
+                result.append(cue)
+                i += 1
+                continue
+
+            # Try merging backward into the already-built result.
+            if result:
+                prev = result[-1]
+                prev_text = " ".join(prev.lines)
+                merged_text = prev_text + " " + text
+                gap = cue.start_sec - prev.end_sec
+                merged_dur = cue.end_sec - prev.start_sec
+                if (
+                    gap <= policy.max_merge_gap_sec
+                    and len(merged_text) <= policy.max_chars
+                    and merged_dur <= policy.max_sec
+                ):
+                    result[-1] = Cue(
+                        start_sec=prev.start_sec,
+                        end_sec=cue.end_sec,
+                        lines=_split_text(merged_text),
+                    )
+                    i += 1
+                    changed = True
+                    continue
+
+            # Fall back to merging forward with the next cue.
+            if i + 1 < len(cues):
+                nxt = cues[i + 1]
+                nxt_text = " ".join(nxt.lines)
+                merged_text = text + " " + nxt_text
+                gap = nxt.start_sec - cue.end_sec
+                merged_dur = nxt.end_sec - cue.start_sec
+                if (
+                    gap <= policy.max_merge_gap_sec
+                    and len(merged_text) <= policy.max_chars
+                    and merged_dur <= policy.max_sec
+                ):
+                    result.append(Cue(
+                        start_sec=cue.start_sec,
+                        end_sec=nxt.end_sec,
+                        lines=_split_text(merged_text),
+                    ))
+                    i += 2
+                    changed = True
+                    continue
+
+            result.append(cue)
+            i += 1
+
+        cues = result
+
+    return cues
 
 
 def words_to_cues(words: list[Word], policy: SegmentPolicy) -> list[Cue]:
@@ -96,4 +176,4 @@ def words_to_cues(words: list[Word], policy: SegmentPolicy) -> list[Cue]:
             end = min(start + policy.min_sec, next_start)
         cues.append(Cue(start_sec=start, end_sec=end, lines=_split_to_lines(group)))
 
-    return cues
+    return _merge_short_cues(cues, policy)

@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     CUE_MAX_SEC: float = 6.0
     CUE_MIN_SEC: float = 1.0
     CUE_SILENCE_MS: int = 700
+    CUE_MIN_CHARS: int = 20
+    CUE_MAX_MERGE_GAP_SEC: float = 1.5
 
     # Audio
     MAX_AUDIO_BYTES: int = 200_000_000
