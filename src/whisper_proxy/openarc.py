@@ -16,7 +16,11 @@ _QWEN_LANG_TAG = re.compile(r"language \S+<asr_text>")
 
 
 def _clean_text(text: str) -> str:
-    return _QWEN_LANG_TAG.sub("", text).strip()
+    # Replace each tag with a space so adjacent segments don't merge words,
+    # then collapse any double-space that results when the caller's text already
+    # had a trailing space before the tag.
+    cleaned = _QWEN_LANG_TAG.sub(" ", text).strip()
+    return re.sub(r" {2,}", " ", cleaned)
 
 
 class OpenArcError(Exception):

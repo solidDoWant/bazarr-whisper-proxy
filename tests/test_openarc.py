@@ -62,6 +62,12 @@ def test_clean_text_strips_multiple_tags() -> None:
     assert _clean_text(raw) == "This is a sentence. Another sentence. Final words."
 
 
+def test_clean_text_no_space_at_segment_boundary() -> None:
+    # Real Qwen3-ASR output has no space between segments; words must not merge.
+    raw = "language English<asr_text>All right.language None<asr_text>Hey Clay."
+    assert _clean_text(raw) == "All right. Hey Clay."
+
+
 def test_clean_text_passthrough_when_no_tags() -> None:
     assert _clean_text("Plain transcript with no tags.") == "Plain transcript with no tags."
 
