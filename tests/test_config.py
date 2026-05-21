@@ -18,7 +18,7 @@ def test_defaults() -> None:
     assert s.OPENARC_READ_TIMEOUT == 3000
     assert s.OPENARC_CONNECT_TIMEOUT == 5
     assert s.ALIGNER_MODEL == "mms-1b-all"
-    assert s.ALIGNER_BATCH_SIZE == 16
+    assert s.ALIGNER_BATCH_SIZE == 4
     assert s.ALIGNER_WINDOW_SEC == 30
     assert s.LANG_DETECT_WINDOW_SEC == 10
     assert s.LANG_DETECT_MAX_ATTEMPTS == 6

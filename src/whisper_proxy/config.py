@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # Forced aligner
     ALIGNER_MODEL: str = "mms-1b-all"
     ALIGNER_MODEL_PATH: str = "~/ctc_forced_aligner/model.onnx"
-    ALIGNER_BATCH_SIZE: int = 16
+    ALIGNER_BATCH_SIZE: int = 4
     ALIGNER_WINDOW_SEC: int = 30
 
     # Language detection — center-first shifting-window algorithm (task 15)
