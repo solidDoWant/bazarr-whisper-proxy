@@ -11,6 +11,7 @@ from whisper_proxy.openarc import (
     OpenArcInferenceError,
     OpenArcUnavailable,
     Transcription,
+    _clean_text,
 )
 
 BASE = "http://openarc-test:8000"
@@ -39,6 +40,39 @@ def make_settings(**kwargs: object) -> Settings:
         OPENARC_READ_TIMEOUT=30,
         **kwargs,
     )
+
+
+# --- Qwen3-ASR tag stripping ---
+
+
+def test_clean_text_strips_language_english_tag() -> None:
+    assert _clean_text("language English<asr_text>Hello world.") == "Hello world."
+
+
+def test_clean_text_strips_language_none_tag() -> None:
+    assert _clean_text("language None<asr_text>Hey Clay, check me out.") == "Hey Clay, check me out."
+
+
+def test_clean_text_strips_multiple_tags() -> None:
+    raw = (
+        "language English<asr_text>This is a sentence. "
+        "language None<asr_text>Another sentence. "
+        "language English<asr_text>Final words."
+    )
+    assert _clean_text(raw) == "This is a sentence. Another sentence. Final words."
+
+
+def test_clean_text_passthrough_when_no_tags() -> None:
+    assert _clean_text("Plain transcript with no tags.") == "Plain transcript with no tags."
+
+
+async def test_transcribe_strips_qwen_tags_from_text() -> None:
+    tagged = {**VERBOSE_JSON, "text": "language English<asr_text>Hello world."}
+    with respx.mock:
+        respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=tagged))
+        async with OpenArcClient(make_settings()) as c:
+            result = await c.transcribe(FAKE_AUDIO, language="en")
+    assert result.text == "Hello world."
 
 
 # --- Criterion 1: transcribe with language sends all required fields ---

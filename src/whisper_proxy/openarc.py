@@ -1,4 +1,5 @@
 import json
+import re
 from dataclasses import dataclass, field
 from types import TracebackType
 from typing import Any, Literal, cast
@@ -7,6 +8,15 @@ import httpx
 
 from whisper_proxy.config import Settings
 from whisper_proxy.lang import alpha2_to_openarc_language
+
+# Qwen3-ASR embeds structured metadata in the text field, e.g.
+# "language English<asr_text>Hello" or "language None<asr_text>Hey".
+# These tags must be stripped before the text is used for alignment.
+_QWEN_LANG_TAG = re.compile(r"language \S+<asr_text>")
+
+
+def _clean_text(text: str) -> str:
+    return _QWEN_LANG_TAG.sub("", text).strip()
 
 
 class OpenArcError(Exception):
@@ -89,7 +99,7 @@ class OpenArcClient:
         body = resp.json()
 
         return Transcription(
-            text=body["text"],
+            text=_clean_text(body["text"]),
             language=body.get("language"),
             duration=body.get("duration"),
             metrics=body.get("metrics") or {},
