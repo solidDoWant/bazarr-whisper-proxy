@@ -35,14 +35,24 @@ def _load_manifest(path: Path) -> list[dict[str, Any]]:
     return list(clips)
 
 
+# Minimum raw-PCM size the bridge must handle: 1 MiB + headroom.
+# At 16 kHz mono s16le, 35 s ≈ 1 120 000 bytes.  Clips shorter than this
+# are padded with silence so every e2e fixture exercises the > 1 MiB path.
+_MIN_CLIP_DURATION_SEC: int = 35
+
+
 def _content_hash(clip: dict[str, Any]) -> str:
     """Stable hash of the fields that affect the rendered audio.
 
     Bumping the espeak version may change the output bit-for-bit; that's fine —
     the hash isn't a strict integrity check, just a "rebuild on change" gate.
+    Changing _MIN_CLIP_DURATION_SEC is included so cached MKVs are rebuilt.
     """
     fields = ("text", "espeak_voice", "espeak_speed", "language")
-    payload = "|".join(str(clip.get(k, "")) for k in fields).encode()
+    payload = (
+        "|".join(str(clip.get(k, "")) for k in fields)
+        + f"|min_dur={_MIN_CLIP_DURATION_SEC}"
+    ).encode()
     return hashlib.sha256(payload).hexdigest()[:16]
 
 
@@ -70,6 +80,29 @@ def _synth_wav(clip: dict[str, Any], wav_path: Path) -> None:
         clip["text"],
     ]
     subprocess.run(cmd, check=True, capture_output=True)
+
+
+def _pad_wav(wav_path: Path, min_duration_sec: int) -> None:
+    """Extend wav_path in-place with silence to reach at least min_duration_sec.
+
+    apad=whole_dur is a no-op when the input is already long enough, so this
+    is safe to call unconditionally. The padded WAV replaces the original.
+    """
+    padded = wav_path.with_suffix(".padded.wav")
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(wav_path),
+            "-af",
+            f"apad=whole_dur={min_duration_sec}",
+            str(padded),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    padded.replace(wav_path)
 
 
 _ALPHA2_TO_ISO639_2: dict[str, str] = {
@@ -174,6 +207,7 @@ def build_all(manifest_path: Path = MANIFEST_PATH, out_dir: Path = DEFAULT_OUT_D
         wav_path = cache_dir / f"{slug}.wav"
         print(f"[fixtures] synthesizing {slug} → {mkv_path.name}", file=sys.stderr)
         _synth_wav(clip, wav_path)
+        _pad_wav(wav_path, _MIN_CLIP_DURATION_SEC)
         _wrap_mkv(wav_path, mkv_path, tag, clip["language"])
         produced.append(mkv_path)
 

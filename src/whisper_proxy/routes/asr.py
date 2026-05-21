@@ -1,8 +1,9 @@
 import logging
 
 import pysrt
-from fastapi import APIRouter, File, Query, Request, UploadFile
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
+from starlette.datastructures import UploadFile
 
 from whisper_proxy.aligner import AlignmentFailed, align
 from whisper_proxy.audio import AudioTooLarge, assert_within_size_limit, pcm_to_float32, pcm_to_wav
@@ -96,7 +97,6 @@ async def asr(
     output: str = Query("srt"),
     encode: str = Query("false"),
     video_file: str | None = Query(None),
-    audio_file: UploadFile = File(...),
 ) -> Response:
     settings = get_settings(request)
     client = get_openarc_client(request)
@@ -110,8 +110,16 @@ async def asr(
                 status_code=422,
             )
 
-    async with record_stage("ingest_ms"):
-        pcm = await audio_file.read()
+    # Parse form with project-level limit to bypass Starlette's default 1 MB cap.
+    form = await request.form(max_part_size=settings.MAX_AUDIO_BYTES)
+    try:
+        audio_field = form.get("audio_file")
+        if not isinstance(audio_field, UploadFile):
+            return JSONResponse({"detail": "audio_file required"}, status_code=422)
+        async with record_stage("ingest_ms"):
+            pcm = await audio_field.read()
+    finally:
+        await form.close()
 
     try:
         assert_within_size_limit(pcm, settings.MAX_AUDIO_BYTES)

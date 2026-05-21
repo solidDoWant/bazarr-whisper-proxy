@@ -1,8 +1,9 @@
 import logging
 import re
 
-from fastapi import APIRouter, File, Query, Request, UploadFile
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
+from starlette.datastructures import UploadFile
 
 from whisper_proxy.audio import AudioTooLarge, assert_within_size_limit, pcm_to_wav
 from whisper_proxy.config import Settings
@@ -119,13 +120,19 @@ async def detect_language(
     request: Request,
     encode: str = Query("false"),
     video_file: str | None = Query(None),
-    audio_file: UploadFile = File(...),
 ) -> Response:
     settings = get_settings(request)
     client = get_openarc_client(request)
 
-    async with record_stage("ingest_ms"):
-        pcm = await audio_file.read()
+    form = await request.form(max_part_size=settings.MAX_AUDIO_BYTES)
+    try:
+        audio_field = form.get("audio_file")
+        if not isinstance(audio_field, UploadFile):
+            return JSONResponse({"detail": "audio_file required"}, status_code=422)
+        async with record_stage("ingest_ms"):
+            pcm = await audio_field.read()
+    finally:
+        await form.close()
 
     try:
         assert_within_size_limit(pcm, settings.MAX_AUDIO_BYTES)

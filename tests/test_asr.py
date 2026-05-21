@@ -24,6 +24,9 @@ SAMPLE_DURATION_SEC = 2.0
 # 2 seconds of silence at 16kHz mono s16le: samples = 16000*2 = 32000 half-words
 _SILENCE_PCM: bytes = b"\x00\x00" * int(SAMPLE_RATE * SAMPLE_DURATION_SEC)
 
+# 35 s of silence — 1 120 000 bytes, just over the 1 MiB multipart default.
+_LARGE_PCM: bytes = b"\x00\x00" * int(SAMPLE_RATE * 35)
+
 OPENARC_BASE = "http://localhost:8000"
 TRANSCRIPTIONS_URL = f"{OPENARC_BASE}/v1/audio/transcriptions"
 STATUS_URL = f"{OPENARC_BASE}/openarc/status"
@@ -428,3 +431,41 @@ def test_contract_replay_broken_writer_triggers_validation_gate() -> None:
     # And confirm that pysrt would indeed reject the bad output
     with pytest.raises(pysrt.Error):
         pysrt.from_string("this is not valid srt\n", error_handling=pysrt.ERROR_RAISE)
+
+
+# ---------------------------------------------------------------------------
+# Regression: audio > 1 MiB must not be rejected by the multipart parser
+# ---------------------------------------------------------------------------
+
+
+def test_audio_over_1mib_no_filename_returns_422_not_400() -> None:
+    """A no-filename part > 1 MiB must reach our handler, not be rejected by Starlette.
+
+    When audio_file is sent without a filename in Content-Disposition, Starlette's
+    MultiPartParser accumulates the bytes in memory and enforces max_part_size (default
+    1 MiB).  With UploadFile = File(...), FastAPI calls request.form() with that default
+    and the parser raises MultiPartException → HTTPException(400) before our code runs.
+
+    With explicit request.form(max_part_size=MAX_AUDIO_BYTES) the parser accepts the
+    body; our isinstance check then returns 422 ("audio_file required") because a
+    no-filename field comes back as str, not UploadFile.  The important invariant is
+    422 (we got to decide), not 400 (Starlette decided for us).
+
+    Note: Bazarr's requests library always supplies a filename so production traffic
+    takes the UploadFile path and bypasses max_part_size entirely.  This test covers
+    the defensive no-filename case where the limit would otherwise silently gate traffic.
+    """
+    with respx.mock:
+        respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))
+        with _make_client() as client:
+            resp = client.post(
+                "/asr",
+                params={"task": "transcribe", "language": "en", "output": "srt", "encode": "false"},
+                # (None, ...) → no filename → non-file multipart part → max_part_size applies
+                files={"audio_file": (None, _LARGE_PCM, "application/octet-stream")},
+            )
+
+    # 422 = our handler ran and rejected the field type.
+    # 400 = Starlette's parser rejected the body before we ran (regression).
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "audio_file required"
