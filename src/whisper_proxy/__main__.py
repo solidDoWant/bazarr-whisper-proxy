@@ -8,6 +8,7 @@ def main() -> None:
         port=9000,
         loop="uvloop",
         http="httptools",
+        access_log=False,
     )
 
 

@@ -42,19 +42,20 @@ class CorrelationMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             status = response.status_code
         finally:
-            elapsed = round((time.perf_counter() - start) * 1000, 2)
-            timings = stage_timings_var.get(None) or {}
-            _log.info(
-                "request completed",
-                extra={
-                    "request_id": req_id,
-                    "method": request.method,
-                    "path": request.url.path,
-                    "status": status,
-                    "total_ms": elapsed,
-                    **{k: _fmt_timing(v) for k, v in timings.items()},
-                },
-            )
+            if not (request.url.path == "/healthz" and status == 200):
+                elapsed = round((time.perf_counter() - start) * 1000, 2)
+                timings = stage_timings_var.get(None) or {}
+                _log.info(
+                    "request completed",
+                    extra={
+                        "request_id": req_id,
+                        "method": request.method,
+                        "path": request.url.path,
+                        "status": status,
+                        "total_ms": elapsed,
+                        **{k: _fmt_timing(v) for k, v in timings.items()},
+                    },
+                )
             request_id_var.reset(id_tok)
             stage_timings_var.reset(tim_tok)
 
