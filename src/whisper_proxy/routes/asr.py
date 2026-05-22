@@ -123,8 +123,11 @@ async def asr(
 
     try:
         assert_within_size_limit(pcm, settings.MAX_AUDIO_BYTES)
-    except AudioTooLarge:
-        return JSONResponse({"detail": "audio too large"}, status_code=413)
+    except AudioTooLarge as exc:
+        return JSONResponse(
+            {"detail": "audio too large", "actual_size": exc.actual_human, "max_size": exc.max_human},
+            status_code=413,
+        )
 
     if video_file:
         _log.info("request summary video_file=%s", video_file)
