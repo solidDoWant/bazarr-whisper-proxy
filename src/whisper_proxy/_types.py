@@ -10,3 +10,10 @@ class Word:
     token: str
     start_sec: float
     end_sec: float
+
+
+@dataclass(frozen=True)
+class TranscriptionSegment:
+    start_sec: float
+    end_sec: float
+    text: str

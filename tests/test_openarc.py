@@ -158,6 +158,82 @@ async def test_transcribe_returns_transcription_with_all_fields() -> None:
     assert result.duration is None
     assert result.metrics["language"] == "English"
     assert result.metrics["audio_duration_sec"] == pytest.approx(10.5)
+    assert result.segments == []
+
+
+# --- Segment parsing: Qwen3-ASR nests segments under metrics ---
+
+
+async def test_transcribe_parses_segments_from_metrics() -> None:
+    body = {
+        **VERBOSE_JSON,
+        "metrics": {
+            **VERBOSE_JSON["metrics"],
+            "segments": [
+                {
+                    "start": 0.0,
+                    "end": 1.5,
+                    "text": "language English<asr_text>Hello world.",
+                },
+                {
+                    "start": 1.5,
+                    "end": 3.25,
+                    "text": "language None<asr_text>Second segment.",
+                },
+            ],
+        },
+    }
+    with respx.mock:
+        respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=body))
+        async with OpenArcClient(make_settings()) as c:
+            result = await c.transcribe(FAKE_AUDIO, language="en")
+
+    assert len(result.segments) == 2
+    assert result.segments[0].start_sec == pytest.approx(0.0)
+    assert result.segments[0].end_sec == pytest.approx(1.5)
+    assert result.segments[0].text == "Hello world."
+    assert result.segments[1].start_sec == pytest.approx(1.5)
+    assert result.segments[1].end_sec == pytest.approx(3.25)
+    assert result.segments[1].text == "Second segment."
+
+
+async def test_transcribe_parses_segments_from_top_level() -> None:
+    body = {
+        **VERBOSE_JSON,
+        "segments": [
+            {"start": 0.0, "end": 2.0, "text": "Top-level segment."},
+        ],
+    }
+    with respx.mock:
+        respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=body))
+        async with OpenArcClient(make_settings()) as c:
+            result = await c.transcribe(FAKE_AUDIO, language="en")
+
+    assert len(result.segments) == 1
+    assert result.segments[0].text == "Top-level segment."
+
+
+async def test_transcribe_skips_segments_with_missing_fields() -> None:
+    body = {
+        **VERBOSE_JSON,
+        "metrics": {
+            **VERBOSE_JSON["metrics"],
+            "segments": [
+                {"start": 0.0, "end": 1.0, "text": "Good."},
+                {"start": 1.0, "text": "No end."},
+                {"end": 2.0, "text": "No start."},
+                {"start": 2.0, "end": 3.0},  # no text
+                {"start": 3.0, "end": 4.0, "text": "language English<asr_text>"},  # cleans to ""
+            ],
+        },
+    }
+    with respx.mock:
+        respx.post(TRANSCRIPTIONS_URL).mock(return_value=httpx.Response(200, json=body))
+        async with OpenArcClient(make_settings()) as c:
+            result = await c.transcribe(FAKE_AUDIO, language="en")
+
+    assert len(result.segments) == 1
+    assert result.segments[0].text == "Good."
 
 
 # --- Criterion 4: model_state returns status or "unknown" ---

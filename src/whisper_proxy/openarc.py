@@ -6,6 +6,7 @@ from typing import Any, Literal, cast
 
 import httpx
 
+from whisper_proxy._types import TranscriptionSegment
 from whisper_proxy.config import Settings
 from whisper_proxy.lang import alpha2_to_openarc_language
 
@@ -47,6 +48,32 @@ class Transcription:
     language: str | None
     duration: float | None
     metrics: dict[str, Any] = field(default_factory=dict)
+    segments: list[TranscriptionSegment] = field(default_factory=list)
+
+
+def _parse_segments(body: dict[str, Any]) -> list[TranscriptionSegment]:
+    # Qwen3-ASR returns segments under metrics; tolerate a top-level field too
+    # in case a future OpenArc build moves them.
+    raw = body.get("segments")
+    if raw is None:
+        raw = body.get("metrics", {}).get("segments")
+    if not raw:
+        return []
+
+    out: list[TranscriptionSegment] = []
+    for entry in raw:
+        start = entry.get("start")
+        end = entry.get("end")
+        text = entry.get("text")
+        if start is None or end is None or text is None:
+            continue
+        cleaned = _clean_text(str(text))
+        if not cleaned:
+            continue
+        out.append(
+            TranscriptionSegment(start_sec=float(start), end_sec=float(end), text=cleaned)
+        )
+    return out
 
 
 class OpenArcClient:
@@ -107,6 +134,7 @@ class OpenArcClient:
             language=body.get("language"),
             duration=body.get("duration"),
             metrics=body.get("metrics") or {},
+            segments=_parse_segments(body),
         )
 
     async def detect_language(self, audio_wav: bytes) -> str:

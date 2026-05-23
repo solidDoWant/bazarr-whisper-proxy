@@ -5,6 +5,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from starlette.datastructures import UploadFile
 
+from whisper_proxy._types import TranscriptionSegment
 from whisper_proxy.aligner import AlignmentFailed, align
 from whisper_proxy.audio import AudioTooLarge, assert_within_size_limit, pcm_to_float32, pcm_to_wav
 from whisper_proxy.deps import get_lingarr_client, get_openarc_client, get_settings
@@ -125,7 +126,11 @@ async def asr(
         assert_within_size_limit(pcm, settings.MAX_AUDIO_BYTES)
     except AudioTooLarge as exc:
         return JSONResponse(
-            {"detail": "audio too large", "actual_size": exc.actual_human, "max_size": exc.max_human},
+            {
+                "detail": "audio too large",
+                "actual_size": exc.actual_human,
+                "max_size": exc.max_human,
+            },
             status_code=413,
         )
 
@@ -146,11 +151,29 @@ async def asr(
 
     align_language = language or "en"
 
+    # Per-segment alignment: Qwen3-ASR already provides utterance-boundary
+    # segments (start, end, text); aligning each independently keeps the
+    # ctc-forced-aligner DP table small and bounds peak memory regardless
+    # of total audio length. If the upstream response lacked segments, fall
+    # back to a single segment covering the full audio.
+    align_segments = transcription.segments
+    if not align_segments:
+        audio_duration = float(
+            transcription.metrics.get("audio_duration_sec") or len(pcm) / (16000 * 2)
+        )
+        align_segments = [
+            TranscriptionSegment(
+                start_sec=0.0,
+                end_sec=max(audio_duration, 0.001),
+                text=transcription.text,
+            )
+        ]
+
     try:
         async with record_stage("align_ms"):
             words = await align(
                 audio_float32,
-                transcription.text,
+                align_segments,
                 align_language,
                 _settings=settings,
             )

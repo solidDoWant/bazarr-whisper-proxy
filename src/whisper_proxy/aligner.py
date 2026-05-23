@@ -24,7 +24,7 @@ from ctc_forced_aligner import (
     time_to_frame,
 )
 
-from ._types import Word
+from ._types import TranscriptionSegment, Word
 from .config import Settings
 
 logger = logging.getLogger(__name__)
@@ -293,9 +293,75 @@ def _align_sync(
     )
 
 
+def _align_segments_sync(
+    audio: np.ndarray,
+    segments: list[TranscriptionSegment],
+    language: str,
+    model_path: str,
+    batch_size: int,
+    window_sec: int,
+) -> list[Word]:
+    if not segments:
+        raise AlignmentFailed("no segments to align")
+
+    total_samples = audio.shape[0]
+    all_words: list[Word] = []
+    succeeded = 0
+    last_error: Exception | None = None
+
+    for seg in segments:
+        start_sample = max(0, round(seg.start_sec * SAMPLING_FREQ))
+        end_sample = min(total_samples, round(seg.end_sec * SAMPLING_FREQ))
+        if end_sample <= start_sample:
+            logger.warning(
+                "skipping segment with empty audio range: %.3fs-%.3fs",
+                seg.start_sec,
+                seg.end_sec,
+            )
+            continue
+
+        slice_audio = audio[start_sample:end_sample]
+
+        try:
+            seg_words = _align_sync(
+                slice_audio,
+                seg.text,
+                language,
+                model_path,
+                batch_size,
+                window_sec,
+            )
+        except AlignmentFailed as exc:
+            # A single failing segment shouldn't lose the rest of the alignment.
+            # Track the last error so we can surface it if every segment fails.
+            logger.warning(
+                "segment alignment failed (%.3fs-%.3fs): %s",
+                seg.start_sec,
+                seg.end_sec,
+                exc,
+            )
+            last_error = exc
+            continue
+        finally:
+            del slice_audio
+
+        succeeded += 1
+        offset = seg.start_sec
+        all_words.extend(
+            Word(token=w.token, start_sec=w.start_sec + offset, end_sec=w.end_sec + offset)
+            for w in seg_words
+        )
+
+    if succeeded == 0:
+        raise AlignmentFailed(f"all {len(segments)} segments failed to align: {last_error}")
+
+    all_words.sort(key=lambda w: w.start_sec)
+    return all_words
+
+
 async def align(
     audio_float32: np.ndarray,
-    transcript: str,
+    segments: list[TranscriptionSegment],
     language: str,
     *,
     _settings: Settings | None = None,
@@ -304,9 +370,9 @@ async def align(
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         _executor,
-        _align_sync,
+        _align_segments_sync,
         audio_float32,
-        transcript,
+        segments,
         language,
         s.ALIGNER_MODEL_PATH,
         s.ALIGNER_BATCH_SIZE,
