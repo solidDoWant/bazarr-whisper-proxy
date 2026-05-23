@@ -241,10 +241,12 @@ def test_translate_cue_indices_sequential() -> None:
 
 
 def test_translate_cue_count_matches_source() -> None:
-    # multi-word list produces multiple cues
+    # Multi-word list produces multiple cues. The gap between the cues must
+    # exceed CUE_MAX_MERGE_GAP_SEC (1.5s) after min-duration extension, or
+    # _merge_short_cues will combine these two short cues into one.
     words = [
         Word(token="One.", start_sec=0.0, end_sec=0.5),
-        Word(token="Two.", start_sec=2.0, end_sec=2.5),  # large gap → separate cue
+        Word(token="Two.", start_sec=3.0, end_sec=3.5),  # large gap → separate cue
     ]
     mock_lingarr = _mock_lingarr({1: "One.", 2: "Two."})
 
@@ -252,7 +254,7 @@ def test_translate_cue_count_matches_source() -> None:
         "text": "One. Two.",
         "language": "Spanish",
         "duration": None,
-        "metrics": {"audio_duration_sec": 3.0},
+        "metrics": {"audio_duration_sec": 4.0},
     }
 
     with (

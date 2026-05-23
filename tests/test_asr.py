@@ -209,7 +209,7 @@ def test_oversized_audio_returns_413() -> None:
         respx.mock,
         patch(
             "whisper_proxy.routes.asr.assert_within_size_limit",
-            side_effect=AudioTooLarge("too big"),
+            side_effect=AudioTooLarge(actual_bytes=10_000_000, max_bytes=1_000_000),
         ),
     ):
         respx.get(STATUS_URL).mock(return_value=httpx.Response(200, json=[]))

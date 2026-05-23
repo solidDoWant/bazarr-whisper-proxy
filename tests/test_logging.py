@@ -164,6 +164,36 @@ def _client() -> TestClient:
     return TestClient(create_app(), raise_server_exceptions=True)
 
 
+def _ping_client() -> TestClient:
+    """A client over a tiny app exposing GET /ping that returns 200.
+
+    The real /healthz endpoint is suppressed from summary logging in the
+    middleware (to reduce noise from kubelet probes), so tests that need to
+    observe the summary log line must hit a different path.
+    """
+    from collections.abc import AsyncGenerator
+    from contextlib import asynccontextmanager
+
+    from fastapi import FastAPI
+
+    from whisper_proxy.logging_setup import configure_logging
+    from whisper_proxy.middleware import CorrelationMiddleware
+
+    @asynccontextmanager
+    async def _lifespan(_: FastAPI) -> AsyncGenerator[None]:
+        configure_logging("INFO", "json")
+        yield
+
+    app = FastAPI(lifespan=_lifespan)
+    app.add_middleware(CorrelationMiddleware)
+
+    @app.get("/ping")
+    async def _ping() -> dict[str, str]:
+        return {"ok": "1"}
+
+    return TestClient(app, raise_server_exceptions=True)
+
+
 def test_response_has_x_request_id_header() -> None:
     """AC3: every HTTP response carries X-Request-Id."""
     with _client() as c:
@@ -202,8 +232,8 @@ def test_generates_uuid_for_malformed_header() -> None:
 def test_summary_log_emitted_after_request(caplog: pytest.LogCaptureFixture) -> None:
     """AC5: exactly one INFO summary log line after request with required fields."""
     with caplog.at_level(logging.INFO):
-        with _client() as c:
-            c.get("/healthz")
+        with _ping_client() as c:
+            c.get("/ping")
 
     summaries = [r for r in caplog.records if r.getMessage() == "request completed"]
     assert len(summaries) == 1
@@ -215,7 +245,7 @@ def test_summary_log_emitted_after_request(caplog: pytest.LogCaptureFixture) -> 
     assert hasattr(rec, "total_ms")
     assert hasattr(rec, "request_id")
     assert rec.method == "GET"  # type: ignore[attr-defined]
-    assert rec.path == "/healthz"  # type: ignore[attr-defined]
+    assert rec.path == "/ping"  # type: ignore[attr-defined]
     assert rec.status == 200  # type: ignore[attr-defined]
     assert isinstance(rec.total_ms, float)  # type: ignore[attr-defined]
 
@@ -223,8 +253,8 @@ def test_summary_log_emitted_after_request(caplog: pytest.LogCaptureFixture) -> 
 def test_summary_log_request_id_matches_response(caplog: pytest.LogCaptureFixture) -> None:
     """AC5: summary log request_id matches the X-Request-Id response header."""
     with caplog.at_level(logging.INFO):
-        with _client() as c:
-            resp = c.get("/healthz")
+        with _ping_client() as c:
+            resp = c.get("/ping")
 
     response_rid = resp.headers["x-request-id"]
     summaries = [r for r in caplog.records if r.getMessage() == "request completed"]
@@ -249,12 +279,12 @@ async def test_timing_helper_records_stage(caplog: pytest.LogCaptureFixture) -> 
 def test_timing_helper_absent_stages_not_in_summary(caplog: pytest.LogCaptureFixture) -> None:
     """AC6: stages not recorded do not appear in the summary log."""
     with caplog.at_level(logging.INFO):
-        with _client() as c:
-            c.get("/healthz")
+        with _ping_client() as c:
+            c.get("/ping")
 
     summaries = [r for r in caplog.records if r.getMessage() == "request completed"]
     rec = summaries[0]
-    # healthz doesn't call record_stage, so no stage keys like ingest_ms or openarc_ms
+    # /ping doesn't call record_stage, so no stage keys like ingest_ms or openarc_ms
     assert not hasattr(rec, "ingest_ms")
     assert not hasattr(rec, "openarc_ms")
 
