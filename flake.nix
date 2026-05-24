@@ -119,6 +119,15 @@
             # which are never called during forced-alignment inference.
             "sympy" = mkNoop "sympy";
             "networkx" = mkNoop "networkx";
+            # openvino's wheel ships libopenvino_intel_gpu_plugin.so linked
+            # against libOpenCL.so.1; that lib is provided at runtime by
+            # ocl-icd via LD_LIBRARY_PATH (set in the OCI image config), so
+            # tell auto-patchelf to ignore it at build time.
+            "openvino" = prev."openvino".overrideAttrs (old: {
+              autoPatchelfIgnoreMissingDeps = (old.autoPatchelfIgnoreMissingDeps or [ ]) ++ [
+                "libOpenCL.so.1"
+              ];
+            });
             # torch ships test executables, C++ extension headers, and test .so
             # files inside the wheel — none are needed for inference at runtime.
             "torch" = prev."torch".overrideAttrs (old: {
@@ -147,19 +156,31 @@
 
         # ---------- Aligner model ----------
 
-        # MMS CTC forced-aligner ONNX weights — baked as a dedicated image layer
-        # so app rebuilds don't invalidate this large (1.2 GB) cached layer.
-        alignerModel = pkgs.fetchurl {
+        # MMS CTC forced-aligner ONNX weights — converted to OpenVINO IR at
+        # build time so the runtime doesn't pay the read_model/serialize cost
+        # on container start.
+        alignerOnnxModel = pkgs.fetchurl {
           name = "ctc-forced-aligner-model.onnx";
           url = "https://huggingface.co/deskpai/ctc_forced_aligner/resolve/main/04ac86b67129634da93aea76e0147ef3.onnx";
           hash = "sha256-6LrWf9NTOz08FFsMoxuxU4OUXBM4TdiXW6qntz97Yaw=";
         };
 
-        # Place the model at /models/model.onnx inside its own store path so it
-        # becomes a dedicated Docker layer independent of the app and Python deps.
-        alignerModelDir = pkgs.runCommandLocal "aligner-model-dir" { } ''
+        # Convert ONNX → OpenVINO IR (model.xml + model.bin). Uses nixpkgs'
+        # openvino for the build step; the runtime uses the PyPI wheel via
+        # uv2nix. Both produce/consume the same IR format.
+        alignerIRConvertPython = python.withPackages (ps: [ ps.openvino ]);
+        alignerIRConvertScript = pkgs.writeText "convert-onnx-to-ir.py" ''
+          import os, sys, openvino as ov
+          onnx_path, xml_path, bin_path = sys.argv[1:4]
+          model = ov.Core().read_model(onnx_path)
+          ov.serialize(model, xml_path, bin_path)
+        '';
+        alignerIRDir = pkgs.runCommand "aligner-ir-dir" { } ''
           mkdir -p $out/models
-          cp ${alignerModel} $out/models/model.onnx
+          ${alignerIRConvertPython}/bin/python ${alignerIRConvertScript} \
+            ${alignerOnnxModel} \
+            $out/models/model.xml \
+            $out/models/model.bin
         '';
 
         # ---------- App source layer ----------
@@ -178,15 +199,20 @@
           tag = "latest";
 
           # Layer order (bottom → top):
-          #   system (tini, ca-certs) — rarely changes
-          #   depsVenv               — changes when PyPI deps change
-          #   alignerModelDir        — changes when model changes (rare)
-          #   appSrc                 — changes every commit
+          #   system (tini, ca-certs, GPU userspace) — rarely changes
+          #   depsVenv                              — changes when PyPI deps change
+          #   alignerIRDir                          — changes when model changes (rare)
+          #   appSrc                                — changes every commit
           contents = [
             pkgs.tini
             pkgs.cacert
+            # OpenVINO GPU plugin dlopens libOpenCL.so.1 (from ocl-icd) which
+            # in turn loads the Intel Neo driver (libigdrcl.so) referenced by
+            # the ICD manifest under intel-compute-runtime/etc/OpenCL/vendors.
+            pkgs.ocl-icd
+            pkgs.intel-compute-runtime
             depsVenv
-            alignerModelDir
+            alignerIRDir
             appSrc
           ];
 
@@ -204,10 +230,20 @@
             Env = [
               # Real app source shadows any stub in the venv's site-packages.
               "PYTHONPATH=${appSrc}/src"
-              # Pre-baked model; no network fetch at startup.
-              "ALIGNER_MODEL_PATH=${alignerModelDir}/models/model.onnx"
+              # Pre-baked OpenVINO IR; no conversion at startup.
+              "ALIGNER_MODEL_PATH=${alignerIRDir}/models/model.xml"
+              # Persists OpenVINO's compiled-blob cache across container
+              # restarts so first request after restart doesn't recompile.
+              # Optional.
+              # "ALIGNER_CACHE_DIR=/var/cache/aligner"
               # TLS roots for HTTPS calls to OpenArc.
               "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+              # The OpenVINO wheel ships libs that link against libstdc++ and
+              # the GPU plugin dlopens libOpenCL.so.1. Both need to be on the
+              # loader's search path at runtime.
+              "LD_LIBRARY_PATH=${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.ocl-icd}/lib:${pkgs.intel-compute-runtime}/lib/intel-opencl"
+              # OpenCL ICD loader looks here for vendor manifests (.icd files).
+              "OCL_ICD_VENDORS=${pkgs.intel-compute-runtime}/etc/OpenCL/vendors"
             ];
             ExposedPorts = {
               "9000/tcp" = { };
@@ -230,6 +266,8 @@
           propagatedBuildInputs = with python.pkgs; [
             torch
             numpy
+            # Library imports onnxruntime at module load; kept as a dep even
+            # though forced-alignment inference is now routed through OpenVINO.
             onnxruntime
             librosa
           ];
@@ -252,6 +290,7 @@
           python-json-logger
           python-multipart
           onnxruntime
+          openvino
           torch
           # test deps
           mypy
@@ -267,7 +306,8 @@
         packages = {
           default = appVenv;
           inherit dockerImage;
-          aligner-model = alignerModel;
+          aligner-onnx = alignerOnnxModel;
+          aligner-ir = alignerIRDir;
         };
 
         devShells.default = pkgs.mkShell {

@@ -19,7 +19,20 @@ class Settings(BaseSettings):
 
     # Forced aligner
     ALIGNER_MODEL: str = "mms-1b-all"
-    ALIGNER_MODEL_PATH: str = "~/ctc_forced_aligner/model.onnx"
+    # Path to OpenVINO IR (.xml) or the upstream MMS ONNX (.onnx). When an
+    # .onnx is supplied, the aligner converts it to IR on first use and
+    # caches the result alongside it (dev convenience; production images
+    # bake the .xml directly).
+    ALIGNER_MODEL_PATH: str = "~/ctc_forced_aligner/model.xml"
+    # OpenVINO device string. AUTO lets the runtime pick the best available
+    # device; specify "GPU.1", "GPU.0", or "CPU" to pin. Multi-device (e.g.
+    # "MULTI:GPU.1,GPU.0") rounds across devices for concurrent requests.
+    ALIGNER_DEVICE: str = "AUTO"
+    # Inference precision hint: f16 is the default on GPU, f32 on CPU.
+    ALIGNER_PRECISION: Literal["f16", "f32"] = "f16"
+    # Persists OpenVINO's compiled-blob cache so cold starts don't pay the
+    # device-specific compile cost on every container restart. Empty disables.
+    ALIGNER_CACHE_DIR: str = ""
     ALIGNER_BATCH_SIZE: int = 4
     ALIGNER_WINDOW_SEC: int = 30
 

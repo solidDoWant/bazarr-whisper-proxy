@@ -104,6 +104,9 @@ async def test_does_not_block_event_loop(monkeypatch: pytest.MonkeyPatch):
         transcript: object,
         language: object,
         model_path: object,
+        device: object,
+        precision: object,
+        cache_dir: object,
         batch_size: object,
         window_sec: object,
     ) -> list[Word]:
@@ -195,7 +198,7 @@ async def test_second_call_is_faster(monkeypatch: pytest.MonkeyPatch):
     import whisper_proxy.aligner as _mod
 
     # Force a cold start regardless of test-suite ordering.
-    monkeypatch.setattr(_mod, "_ort_session", None)
+    monkeypatch.setattr(_mod, "_compiled_model", None)
     monkeypatch.setattr(_mod, "_tokenizer", None)
 
     audio = _load_fixture()

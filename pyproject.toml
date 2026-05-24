@@ -9,6 +9,7 @@ dependencies = [
     "httpx>=0.28",
     "pydantic-settings>=2.7",
     "ctc-forced-aligner>=1.0",
+    "openvino>=2026.1",
     "pycountry>=24.6",
     "unidecode>=0.5",
     "torch>=2.5",
@@ -54,7 +55,7 @@ strict = true
 files = ["src"]
 
 [[tool.mypy.overrides]]
-module = ["onnxruntime", "ctc_forced_aligner", "pysrt"]
+module = ["onnxruntime", "ctc_forced_aligner", "pysrt", "openvino"]
 ignore_missing_imports = true
 
 [tool.uv.sources]
