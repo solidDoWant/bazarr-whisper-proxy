@@ -144,9 +144,10 @@ async def test_does_not_block_event_loop(monkeypatch: pytest.MonkeyPatch):
 # They are marked with a custom mark so CI can gate them separately.
 # ---------------------------------------------------------------------------
 
+_model_file = Path(Settings().ALIGNER_MODEL_PATH).expanduser()
 needs_model = pytest.mark.skipif(
-    os.environ.get("SKIP_ALIGNER_INTEGRATION") == "1",
-    reason="SKIP_ALIGNER_INTEGRATION=1 — skipping tests that need the ONNX model",
+    os.environ.get("SKIP_ALIGNER_INTEGRATION") == "1" or not _model_file.exists(),
+    reason="aligner model not present — skipping integration tests",
 )
 
 

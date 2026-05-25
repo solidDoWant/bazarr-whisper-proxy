@@ -1,4 +1,3 @@
-import json
 import re
 from dataclasses import dataclass, field
 from types import TracebackType
@@ -8,7 +7,6 @@ import httpx
 
 from whisper_proxy._types import TranscriptionSegment
 from whisper_proxy.config import Settings
-from whisper_proxy.lang import alpha2_to_openarc_language
 
 # Qwen3-ASR embeds structured metadata in the text field, e.g.
 # "language English<asr_text>Hello" or "language None<asr_text>Hey".
@@ -52,11 +50,7 @@ class Transcription:
 
 
 def _parse_segments(body: dict[str, Any]) -> list[TranscriptionSegment]:
-    # Qwen3-ASR returns segments under metrics; tolerate a top-level field too
-    # in case a future OpenArc build moves them.
     raw = body.get("segments")
-    if raw is None:
-        raw = body.get("metrics", {}).get("segments")
     if not raw:
         return []
 
@@ -108,14 +102,8 @@ class OpenArcClient:
             "model": self._model,
             "response_format": "verbose_json",
         }
-        # Qwen3-ASR's `language` param wants the capitalised English name
-        # ("English", "Spanish", …) — alpha-2 codes like "en" raise an
-        # `Unsupported language` ValueError inside OpenArc that surfaces as a
-        # dropped connection. Translate; if we don't have a mapping, omit
-        # the param and let OpenArc auto-detect.
-        openarc_lang = alpha2_to_openarc_language(language)
-        if openarc_lang is not None:
-            data["openarc_asr"] = json.dumps({"qwen3_asr": {"language": openarc_lang}})
+        if language:
+            data["language"] = language
 
         try:
             resp = await self._client.post(
