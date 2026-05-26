@@ -40,6 +40,7 @@ class E2eConfig:
     radarr_url: str
     bazarr_url: str
     bridge_url: str
+    lingarr_url: str | None
     media_host_root: Path
     clips: list[dict[str, Any]]
 
@@ -49,6 +50,7 @@ def e2e_config() -> E2eConfig:
     radarr_url = _env("RADARR_URL", "http://127.0.0.1:7878")
     bazarr_url = _env("BAZARR_URL", "http://127.0.0.1:6767")
     bridge_url = _env("BRIDGE_URL", "http://127.0.0.1:9000")
+    lingarr_url = os.environ.get("LINGARR_URL")
     media_host_root = Path(_env("MEDIA_HOST_ROOT"))
 
     clips = list(json.loads(MANIFEST_PATH.read_text())["clips"])
@@ -56,6 +58,7 @@ def e2e_config() -> E2eConfig:
         radarr_url=radarr_url,
         bazarr_url=bazarr_url,
         bridge_url=bridge_url,
+        lingarr_url=lingarr_url,
         media_host_root=media_host_root,
         clips=clips,
     )

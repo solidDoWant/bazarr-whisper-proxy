@@ -97,7 +97,7 @@ services:
     environment:
       OPENARC_BASE_URL: "${OPENARC_E2E_BASE_URL}"
       OPENARC_MODEL: "${OPENARC_E2E_MODEL:-qwen3-asr-0_6b-int8-asym}"
-      LINGARR_BASE_URL: "http://lingarr:8080"
+      LINGARR_BASE_URL: "${LINGARR_BRIDGE_URL:-http://lingarr:8080}"
       LINGARR_API_KEY: "${LINGARR_API_KEY:-e2e-placeholder-key}"
       LINGARR_TARGET_LANGUAGE: "en"
       LOG_LEVEL: "${WHISPER_PROXY_LOG_LEVEL:-INFO}"

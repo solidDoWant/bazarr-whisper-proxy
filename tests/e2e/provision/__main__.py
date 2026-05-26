@@ -39,6 +39,7 @@ def main() -> int:
     radarr_url = _env("RADARR_URL", "http://127.0.0.1:7878")
     bazarr_url = _env("BAZARR_URL", "http://127.0.0.1:6767")
     lingarr_url = _env("LINGARR_URL", "http://127.0.0.1:9876")
+    lingarr_external = os.environ.get("LINGARR_EXTERNAL", "").lower() in ("1", "true", "yes")
     libretranslate_in_compose = _env("LIBRETRANSLATE_IN_COMPOSE_URL", "http://libretranslate:5000")
     bridge_in_compose = _env("BRIDGE_IN_COMPOSE_URL", "http://whisper-proxy:9000")
     radarr_in_compose = _env("RADARR_IN_COMPOSE_URL", "http://radarr:7878")
@@ -112,9 +113,12 @@ def main() -> int:
         bazarr.assign_movie_profile(movie["id"], profile_id)
 
     # 3. Lingarr setup -----------------------------------------------------
-    _log.info("Waiting for Lingarr at %s", lingarr_url)
-    lingarr.wait_ready()
-    lingarr.ensure_libretranslate_backend(libretranslate_in_compose)
+    if lingarr_external:
+        _log.info("Lingarr is external (%s) — skipping in-compose provisioning", lingarr_url)
+    else:
+        _log.info("Waiting for Lingarr at %s", lingarr_url)
+        lingarr.wait_ready()
+        lingarr.ensure_libretranslate_backend(libretranslate_in_compose)
 
     _log.info("Provisioning complete.")
     return 0
