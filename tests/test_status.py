@@ -82,7 +82,11 @@ def test_status_loaded_returns_200() -> None:
             resp = client.get("/status")
 
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok", "model": MODEL, "model_state": "loaded"}
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["model"] == MODEL
+    assert body["model_state"] == "loaded"
+    assert "version" in body
     assert "application/json" in resp.headers["content-type"]
 
 

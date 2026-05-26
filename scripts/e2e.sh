@@ -87,6 +87,10 @@ docker compose -f "${COMPOSE_FILE}" up -d
 # Resolve the host path of the media volume so the provisioner can stage
 # fixture files into it.
 MEDIA_VOLUME="${COMPOSE_PROJECT}_media"
+# In some container environments (e.g. k8s pods with a Docker socket) the
+# volume root is owned by root with 0700.  Open traversal before the -d check
+# so the existence test doesn't false-negative.
+sudo chmod -R o+rx /tmp/docker-data 2>/dev/null || true
 MEDIA_HOST_ROOT="$(docker volume inspect "${MEDIA_VOLUME}" -f '{{ .Mountpoint }}')"
 if [[ -z "${MEDIA_HOST_ROOT}" || ! -d "${MEDIA_HOST_ROOT}" ]]; then
   echo "ERROR: could not resolve host path of media volume ${MEDIA_VOLUME}" >&2
@@ -98,9 +102,7 @@ echo "[e2e] media volume host path: ${MEDIA_HOST_ROOT}"
 # container that mounts it (Radarr is up first via depends_on).
 docker compose -f "${COMPOSE_FILE}" exec -u 0 -T radarr chown -R abc:abc /media
 docker compose -f "${COMPOSE_FILE}" exec -u 0 -T radarr chmod -R 0775 /media
-# We also need to write into the host-side path from the provisioner.
-# Open up traversal (+x) on the docker-data parents; the volume's _data
-# already has the right group ownership after the in-container chown.
+# Re-open traversal after the in-container chown in case it tightened perms.
 ( sudo chmod -R o+rx /tmp/docker-data 2>/dev/null \
   || chmod -R o+rx "${MEDIA_HOST_ROOT}" 2>/dev/null \
   || true )
@@ -108,7 +110,8 @@ docker compose -f "${COMPOSE_FILE}" exec -u 0 -T radarr chmod -R 0775 /media
 # ---- Provision --------------------------------------------------------
 export RADARR_URL="http://127.0.0.1:7878"
 export BAZARR_URL="http://127.0.0.1:6767"
-export LINGARR_URL="http://127.0.0.1:9876"
+# LINGARR_URL may be set by the caller (external Lingarr); fall back to in-compose default.
+export LINGARR_URL="${LINGARR_URL:-http://127.0.0.1:9876}"
 export BRIDGE_URL="http://127.0.0.1:9000"
 export RADARR_IN_COMPOSE_URL="http://radarr:7878"
 export BRIDGE_IN_COMPOSE_URL="http://whisper-proxy:9000"
@@ -121,7 +124,7 @@ python -m tests.e2e.provision
 
 # ---- Pytest -----------------------------------------------------------
 echo "[e2e] running pytest suite"
-PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}" pytest -v tests/e2e/
+PYTHONPATH="${REPO_ROOT}/src:${REPO_ROOT}:${PYTHONPATH:-}" pytest -v tests/e2e/
 
 # ---- Criterion 16: restart bridge against a black-hole OpenArc -------
 # test_16 requires the bridge to be up against an unreachable OpenArc so
@@ -143,7 +146,7 @@ if [[ "${MODE}" == "default" ]]; then
   done
 
   echo "[e2e] running criterion 16 (blackhole)"
-  E2E_OPENARC_BLACKHOLE=1 PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}" \
+  E2E_OPENARC_BLACKHOLE=1 PYTHONPATH="${REPO_ROOT}/src:${REPO_ROOT}:${PYTHONPATH:-}" \
     pytest -v tests/e2e/test_failure_modes.py::test_16_status_503_when_openarc_unreachable
 fi
 
