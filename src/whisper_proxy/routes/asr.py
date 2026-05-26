@@ -134,8 +134,7 @@ async def asr(
             status_code=413,
         )
 
-    if video_file:
-        _log.info("request summary video_file=%s", video_file)
+    _log.info("request summary task=%s video_file=%s", task, video_file)
 
     audio_wav = pcm_to_wav(pcm)
     audio_float32 = pcm_to_float32(pcm)
