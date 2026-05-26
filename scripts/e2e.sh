@@ -114,7 +114,7 @@ export BAZARR_URL="http://127.0.0.1:6767"
 export LINGARR_URL="${LINGARR_URL:-http://127.0.0.1:9876}"
 export BRIDGE_URL="http://127.0.0.1:9000"
 export RADARR_IN_COMPOSE_URL="http://radarr:7878"
-export BRIDGE_IN_COMPOSE_URL="http://whisper-proxy:9000"
+export BRIDGE_IN_COMPOSE_URL="http://host.docker.internal:9000"
 export LIBRETRANSLATE_IN_COMPOSE_URL="http://libretranslate:5000"
 export MEDIA_HOST_ROOT
 export MEDIA_CONTAINER_ROOT="/media"

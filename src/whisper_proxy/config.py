@@ -84,9 +84,3 @@ class Settings(BaseSettings):
         raise ValueError(
             f"CUE_MIN_SEC ({self.CUE_MIN_SEC}) must be less than CUE_MAX_SEC ({self.CUE_MAX_SEC})"
         )
-
-    @model_validator(mode="after")
-    def lingarr_api_key_required(self) -> Settings:
-        if self.LINGARR_BASE_URL is not None and not self.LINGARR_API_KEY:
-            raise ValueError("LINGARR_API_KEY must be set when LINGARR_BASE_URL is configured")
-        return self
