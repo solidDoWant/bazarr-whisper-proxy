@@ -317,17 +317,22 @@ async def test_lingarr_client_request_shape() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Criterion 11: empty/whitespace cue line → NBSP sent to Lingarr
+# Criterion 11: empty/whitespace cue lines are skipped (not sent to Lingarr)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
-async def test_lingarr_empty_cue_line_sent_as_nbsp() -> None:
+async def test_lingarr_empty_cue_line_not_sent() -> None:
+    """Whitespace-only lines are skipped — Lingarr backends reject them with 400.
+
+    LingarrClient pre-populates the result with "" for those positions rather
+    than sending them, so backends (localai, libretranslate) never see them.
+    """
     from whisper_proxy.config import Settings
 
     with respx.mock:
         route = respx.post(LINGARR_TRANSLATE_URL).mock(
-            return_value=httpx.Response(200, json=[{"position": 1, "line": "\u00a0"}])
+            return_value=httpx.Response(200, json=[])
         )
 
         settings = Settings(
@@ -335,7 +340,7 @@ async def test_lingarr_empty_cue_line_sent_as_nbsp() -> None:
             LINGARR_API_KEY="key",
         )
         async with LingarrClient(settings) as lingarr:
-            await lingarr.translate(
+            result = await lingarr.translate(
                 lines=[(1, "   ")],  # whitespace-only
                 source_language="es",
                 target_language="en",
@@ -345,7 +350,8 @@ async def test_lingarr_empty_cue_line_sent_as_nbsp() -> None:
             )
 
     body = json.loads(route.calls[0].request.content)
-    assert body["lines"][0]["line"] == "\u00a0"
+    assert body["lines"] == [], "whitespace-only line must not be sent to Lingarr"
+    assert result == {1: ""}, "whitespace-only line must be passed through as empty string"
 
 
 # ---------------------------------------------------------------------------

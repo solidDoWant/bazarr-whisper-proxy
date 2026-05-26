@@ -8,7 +8,6 @@ import httpx
 
 from whisper_proxy.config import Settings
 
-_NBSP = "\u00a0"
 
 
 class LingarrError(Exception):
@@ -100,11 +99,13 @@ class LingarrClient:
         LingarrUnavailable / LingarrBadRequest / LingarrServerError for transport
         and HTTP-level errors.
         """
-        sent_positions = {pos for pos, _ in lines}
+        # Empty/whitespace-only cues are not sent — Lingarr backends reject them
+        # ("The Line field is required").  They are passed through as empty strings.
+        nonempty = [(pos, text) for pos, text in lines if text.strip()]
+        empty_positions = {pos for pos, text in lines if not text.strip()}
 
-        payload_lines = [
-            {"position": pos, "line": text if text.strip() else _NBSP} for pos, text in lines
-        ]
+        payload_lines = [{"position": pos, "line": text} for pos, text in nonempty]
+        sent_positions = {pos for pos, _ in nonempty}
 
         body = {
             "arrMediaId": arr_media_id,
@@ -133,14 +134,14 @@ class LingarrClient:
         if not isinstance(data, list):
             raise LingarrInvalidResponse("expected array response from Lingarr")
 
-        result: dict[int, str] = {}
+        result: dict[int, str] = {pos: "" for pos in empty_positions}
         for item in data:
             pos = item["position"]
             if pos not in sent_positions:
                 raise LingarrPositionMismatch(pos)
             result[pos] = item["line"]
 
-        if len(result) < len(sent_positions):
-            raise LingarrCountMismatch(expected=len(sent_positions), received=len(result))
+        if len(result) - len(empty_positions) < len(sent_positions):
+            raise LingarrCountMismatch(expected=len(sent_positions), received=len(result) - len(empty_positions))
 
         return result
