@@ -97,7 +97,16 @@ async def test_silence_audio_no_hang():
 
 @pytest.mark.asyncio
 async def test_does_not_block_event_loop(monkeypatch: pytest.MonkeyPatch):
-    """Criterion 8: align() offloads to a thread so the event loop stays responsive."""
+    """Criterion 8: align() offloads to a worker so the event loop stays responsive."""
+    import concurrent.futures
+
+    import whisper_proxy.aligner as _mod
+
+    # Run the worker in-process so the _align_sync stub below applies.
+    _mod.shutdown_worker()
+    monkeypatch.setattr(
+        _mod, "_make_worker", lambda *_a: concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    )
 
     def _slow_sync(
         audio: object,
@@ -133,6 +142,7 @@ async def test_does_not_block_event_loop(monkeypatch: pytest.MonkeyPatch):
         align_done_at.append(time.monotonic())
 
     await asyncio.gather(fast_path(), slow_path())
+    _mod.shutdown_worker()
 
     assert fast_done_at[0] < align_done_at[0], (
         "event loop was blocked: fast coroutine finished after align()"
@@ -198,9 +208,9 @@ async def test_second_call_is_faster(monkeypatch: pytest.MonkeyPatch):
     """Criterion 4: first call pays cold-load cost; subsequent calls don't."""
     import whisper_proxy.aligner as _mod
 
-    # Force a cold start regardless of test-suite ordering.
-    monkeypatch.setattr(_mod, "_compiled_model", None)
-    monkeypatch.setattr(_mod, "_tokenizer", None)
+    # Force a cold start regardless of test-suite ordering: a fresh worker
+    # process has no compiled model.
+    _mod.shutdown_worker()
 
     audio = _load_fixture()
     s = _default_settings()

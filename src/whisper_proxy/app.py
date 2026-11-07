@@ -5,6 +5,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from fastapi import FastAPI
 from pydantic import ValidationError
 
+from whisper_proxy.aligner import shutdown_worker
 from whisper_proxy.config import Settings
 from whisper_proxy.lingarr import LingarrClient
 from whisper_proxy.logging_setup import configure_logging
@@ -25,6 +26,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.settings = settings
 
     async with AsyncExitStack() as stack:
+        # Don't leave the aligner worker process behind on shutdown.
+        stack.callback(shutdown_worker)
         openarc_client = await stack.enter_async_context(OpenArcClient(settings))
         app.state.openarc_client = openarc_client
 

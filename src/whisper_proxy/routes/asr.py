@@ -6,8 +6,8 @@ from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from starlette.datastructures import UploadFile
 
 from whisper_proxy._types import TranscriptionSegment
-from whisper_proxy.aligner import AlignmentFailed, align
-from whisper_proxy.audio import AudioTooLarge, assert_within_size_limit, pcm_to_float32, pcm_to_wav
+from whisper_proxy.aligner import AlignmentFailed, AudioFile, align
+from whisper_proxy.audio import AudioTooLarge, assert_within_size_limit, pcm_to_wav
 from whisper_proxy.deps import get_lingarr_client, get_openarc_client, get_settings
 from whisper_proxy.lingarr import (
     LingarrClient,
@@ -137,8 +137,8 @@ async def asr(
     _log.info("request summary task=%s video_file=%s", task, video_file)
 
     # Hold at most two copies of the audio at once: the WAV is only needed for
-    # the OpenArc upload and the float32 array only for alignment, and the raw
-    # PCM is dropped once both are built.
+    # the OpenArc upload, and the float32 samples for alignment go to a temp
+    # file for the aligner worker, after which the raw PCM is dropped.
     pcm_duration_sec = len(pcm) / (16000 * 2)
     audio_wav = pcm_to_wav(pcm)
 
@@ -151,8 +151,6 @@ async def asr(
     finally:
         del audio_wav
 
-    audio_float32 = pcm_to_float32(pcm)
-    del pcm
 
     align_language = language or "en"
 
@@ -176,8 +174,11 @@ async def asr(
 
     try:
         async with record_stage("align_ms"):
+            # align() takes ownership of the file and deletes it when done.
+            audio_file = AudioFile.from_pcm(pcm)
+            del pcm
             words = await align(
-                audio_float32,
+                audio_file,
                 align_segments,
                 align_language,
                 _settings=settings,
@@ -205,8 +206,6 @@ async def asr(
             settings.LINGARR_DEFAULT_MEDIA_TYPE,
             video_file,
         )
-
-    del audio_float32
 
     async with record_stage("format_ms"):
         policy = SegmentPolicy(
