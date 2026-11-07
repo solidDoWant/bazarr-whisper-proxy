@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-import ctypes
-import gc
+import contextlib
 import logging
 import math
+import multiprocessing
 import os
+import tempfile
 import threading
+from concurrent.futures.process import BrokenProcessPool
 from typing import Any
 
 import numpy as np
@@ -112,70 +114,157 @@ class AlignmentFailed(Exception):
     pass
 
 
-# Process-level model state — loaded on first use, reused until it has been
-# idle for ALIGNER_IDLE_UNLOAD_SEC. All fields below are guarded by _load_lock.
+# Model state. It only ever lives in the worker process (see _make_worker); the
+# parent never loads OpenVINO models itself.
 _load_lock = threading.Lock()
 _compiled_model: Any | None = None
 _tokenizer: Any | None = None
-# Alignments currently running; the model is never unloaded while > 0.
+
+
+# ---------------------------------------------------------------------------
+# Worker process
+#
+# Alignment runs in a single child process. Dropping the compiled model alone
+# frees little: the OpenVINO GPU plugin and Intel compute runtime keep ~0.5 GiB
+# per process once loaded. Exiting the worker after ALIGNER_IDLE_UNLOAD_SEC
+# without requests returns all of it, and a native crash in the worker fails
+# one request instead of the whole server.
+# ---------------------------------------------------------------------------
+
+# Parent-side worker state, guarded by _worker_lock.
+_worker_lock = threading.Lock()
+_worker: concurrent.futures.Executor | None = None
+# Alignments submitted and not yet finished; the worker is never shut down
+# while > 0.
 _active_calls = 0
-# Bumped whenever a call starts, so a pending unload timer can tell that the
-# model was used again after it was scheduled.
+# Bumped whenever a call starts, so a pending shutdown timer can tell that the
+# worker was used again after it was armed.
 _use_generation = 0
-_unload_timer: threading.Timer | None = None
+_shutdown_timer: threading.Timer | None = None
 
 
-def _begin_use() -> None:
-    global _active_calls, _use_generation, _unload_timer
-    with _load_lock:
+def _init_worker(log_level: str, log_format: str) -> None:
+    from .logging_setup import configure_logging
+
+    configure_logging(log_level, log_format)
+
+
+def _make_worker(log_level: str, log_format: str) -> concurrent.futures.Executor:
+    # spawn, not fork: the server already runs threads (uvicorn, httpx), and
+    # OpenVINO isn't fork-safe. One worker: a second would load a second copy
+    # of the model, so concurrent requests queue instead.
+    return concurrent.futures.ProcessPoolExecutor(
+        max_workers=1,
+        mp_context=multiprocessing.get_context("spawn"),
+        initializer=_init_worker,
+        initargs=(log_level, log_format),
+    )
+
+
+def _acquire_worker(s: Settings) -> concurrent.futures.Executor:
+    global _worker, _active_calls, _use_generation, _shutdown_timer
+    with _worker_lock:
         _active_calls += 1
         _use_generation += 1
-        if _unload_timer is not None:
-            _unload_timer.cancel()
-            _unload_timer = None
+        if _shutdown_timer is not None:
+            _shutdown_timer.cancel()
+            _shutdown_timer = None
+        if _worker is None:
+            _worker = _make_worker(s.LOG_LEVEL, s.LOG_FORMAT)
+        return _worker
 
 
-def _end_use(idle_unload_sec: float) -> None:
-    global _active_calls, _unload_timer
-    with _load_lock:
+def _release_worker(
+    worker: concurrent.futures.Executor, idle_unload_sec: float, *, broken: bool
+) -> None:
+    global _worker, _active_calls, _shutdown_timer
+    discard: concurrent.futures.Executor | None = None
+    with _worker_lock:
         _active_calls -= 1
-        if idle_unload_sec <= 0 or _active_calls > 0 or _compiled_model is None:
-            return
-        if _unload_timer is not None:
-            _unload_timer.cancel()
-        _unload_timer = threading.Timer(
-            idle_unload_sec, _unload_if_idle, args=(_use_generation, idle_unload_sec)
-        )
-        _unload_timer.daemon = True
-        _unload_timer.start()
+        if broken and _worker is worker:
+            # The process died; start a fresh one on the next request.
+            discard, _worker = worker, None
+        elif idle_unload_sec > 0 and _active_calls == 0 and _worker is not None:
+            if _shutdown_timer is not None:
+                _shutdown_timer.cancel()
+            _shutdown_timer = threading.Timer(
+                idle_unload_sec, _shutdown_if_idle, args=(_use_generation, idle_unload_sec)
+            )
+            _shutdown_timer.daemon = True
+            _shutdown_timer.start()
+    if discard is not None:
+        discard.shutdown(wait=False, cancel_futures=True)
 
 
-def _unload_if_idle(generation: int, idle_unload_sec: float) -> None:
-    global _compiled_model, _unload_timer
-    with _load_lock:
+def _shutdown_if_idle(generation: int, idle_unload_sec: float) -> None:
+    global _worker, _shutdown_timer
+    with _worker_lock:
         # A call started (and possibly finished) after this timer was armed;
         # that call owns the next timer.
-        if generation != _use_generation or _active_calls > 0 or _compiled_model is None:
+        if generation != _use_generation or _active_calls > 0 or _worker is None:
             return
-        _compiled_model = None
-        _unload_timer = None
-    gc.collect()
-    _release_free_native_memory()
-    logger.info("aligner model unloaded after %.0fs idle", idle_unload_sec)
+        worker, _worker = _worker, None
+        _shutdown_timer = None
+    worker.shutdown(wait=True)
+    logger.info("aligner worker stopped after %.0fs idle", idle_unload_sec)
 
 
-def _release_free_native_memory() -> None:
-    # glibc keeps freed native memory (most of the compiled model) in its
-    # malloc arenas instead of returning it; ask it to hand that back.
-    try:
-        ctypes.CDLL(None).malloc_trim(0)
-    except OSError, AttributeError:
-        pass  # not glibc
+def shutdown_worker() -> None:
+    """Stop the worker process now, e.g. at application shutdown."""
+    global _worker, _shutdown_timer
+    with _worker_lock:
+        worker, _worker = _worker, None
+        if _shutdown_timer is not None:
+            _shutdown_timer.cancel()
+            _shutdown_timer = None
+    if worker is not None:
+        worker.shutdown(wait=True, cancel_futures=True)
 
 
-# Two workers: one can be running OpenVINO inference while the other does the
-# numpy-bound post-processing for the previous segment.
-_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="aligner")
+class AudioFile:
+    """Float32 audio in a temporary file the worker process memory-maps.
+
+    Passing the samples through a file instead of pickling them means the
+    parent and the worker share one page-cache copy instead of each holding
+    their own.
+    """
+
+    def __init__(self, path: str, n_samples: int) -> None:
+        self.path = path
+        self.n_samples = n_samples
+
+    @classmethod
+    def _create(cls, n_samples: int) -> tuple[AudioFile, np.memmap[Any, Any]]:
+        if n_samples == 0:
+            raise AlignmentFailed("no audio to align")
+        fd, path = tempfile.mkstemp(prefix="aligner-", suffix=".f32")
+        os.close(fd)
+        try:
+            data = np.memmap(path, dtype=np.float32, mode="w+", shape=(n_samples,))
+        except BaseException:
+            os.unlink(path)
+            raise
+        return cls(path, n_samples), data
+
+    @classmethod
+    def from_pcm(cls, pcm_bytes: bytes) -> AudioFile:
+        """Convert s16le PCM straight into the file, with no float32 copy in memory."""
+        samples = np.frombuffer(pcm_bytes, dtype=np.int16)
+        audio, data = cls._create(samples.shape[0])
+        np.multiply(samples, np.float32(1 / 32768), out=data)
+        data.flush()
+        return audio
+
+    @classmethod
+    def from_array(cls, audio_float32: np.ndarray) -> AudioFile:
+        audio, data = cls._create(audio_float32.shape[0])
+        data[:] = audio_float32
+        data.flush()
+        return audio
+
+    def delete(self) -> None:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(self.path)
 
 
 def _resolve_ir_path(model_path: str) -> str:
@@ -444,36 +533,86 @@ def _align_segments_sync(
     return all_words
 
 
-def _align_segments_tracked(idle_unload_sec: float, *args: Any) -> list[Word]:
-    # Usage is tracked on the executor thread rather than in align(), so a
-    # cancelled request can't mark the model idle while its thread still runs.
-    _begin_use()
+def _align_file_job(
+    path: str,
+    n_samples: int,
+    segments: list[TranscriptionSegment],
+    language: str,
+    model_path: str,
+    device: str,
+    precision: str,
+    cache_dir: str,
+    batch_size: int,
+    window_sec: int,
+) -> list[Word]:
+    """Entry point in the worker process."""
+    audio = np.memmap(path, dtype=np.float32, mode="r", shape=(n_samples,))
     try:
-        return _align_segments_sync(*args)
+        return _align_segments_sync(
+            audio,
+            segments,
+            language,
+            model_path,
+            device,
+            precision,
+            cache_dir,
+            batch_size,
+            window_sec,
+        )
     finally:
-        _end_use(idle_unload_sec)
+        del audio
 
 
 async def align(
-    audio_float32: np.ndarray,
+    audio: np.ndarray | AudioFile,
     segments: list[TranscriptionSegment],
     language: str,
     *,
     _settings: Settings | None = None,
 ) -> list[Word]:
+    """Align segment transcripts to the audio in the worker process.
+
+    An AudioFile passed in is owned by align() from then on: it is deleted once
+    the worker is done with it, which can be after align() returns if the
+    caller is cancelled.
+    """
     s = _settings if _settings is not None else Settings()
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        _executor,
-        _align_segments_tracked,
-        s.ALIGNER_IDLE_UNLOAD_SEC,
-        audio_float32,
-        segments,
-        language,
-        s.ALIGNER_MODEL_PATH,
-        s.ALIGNER_DEVICE,
-        s.ALIGNER_PRECISION,
-        s.ALIGNER_CACHE_DIR,
-        s.ALIGNER_BATCH_SIZE,
-        s.ALIGNER_WINDOW_SEC,
-    )
+    audio_file = audio if isinstance(audio, AudioFile) else AudioFile.from_array(audio)
+    del audio
+
+    worker = _acquire_worker(s)
+    try:
+        future = worker.submit(
+            _align_file_job,
+            audio_file.path,
+            audio_file.n_samples,
+            segments,
+            language,
+            s.ALIGNER_MODEL_PATH,
+            s.ALIGNER_DEVICE,
+            s.ALIGNER_PRECISION,
+            s.ALIGNER_CACHE_DIR,
+            s.ALIGNER_BATCH_SIZE,
+            s.ALIGNER_WINDOW_SEC,
+        )
+    except BrokenProcessPool as exc:
+        audio_file.delete()
+        _release_worker(worker, s.ALIGNER_IDLE_UNLOAD_SEC, broken=True)
+        raise AlignmentFailed(f"aligner worker process died: {exc}") from exc
+    except BaseException:
+        audio_file.delete()
+        _release_worker(worker, s.ALIGNER_IDLE_UNLOAD_SEC, broken=False)
+        raise
+
+    def _on_done(f: concurrent.futures.Future[list[Word]]) -> None:
+        # Runs when the worker finishes, even if the awaiting request was
+        # cancelled, so the file and the in-use count are always released.
+        broken = not f.cancelled() and isinstance(f.exception(), BrokenProcessPool)
+        audio_file.delete()
+        _release_worker(worker, s.ALIGNER_IDLE_UNLOAD_SEC, broken=broken)
+
+    future.add_done_callback(_on_done)
+    try:
+        return await asyncio.wrap_future(future)
+    except BrokenProcessPool as exc:
+        raise AlignmentFailed(f"aligner worker process died: {exc}") from exc
