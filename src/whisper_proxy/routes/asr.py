@@ -136,8 +136,11 @@ async def asr(
 
     _log.info("request summary task=%s video_file=%s", task, video_file)
 
+    # Hold at most two copies of the audio at once: the WAV is only needed for
+    # the OpenArc upload and the float32 array only for alignment, and the raw
+    # PCM is dropped once both are built.
+    pcm_duration_sec = len(pcm) / (16000 * 2)
     audio_wav = pcm_to_wav(pcm)
-    audio_float32 = pcm_to_float32(pcm)
 
     try:
         async with record_stage("openarc_ms"):
@@ -145,8 +148,11 @@ async def asr(
     except (OpenArcUnavailable, OpenArcBadRequest, OpenArcInferenceError) as exc:
         _log.error("openarc error: %s", exc)
         return JSONResponse({"detail": str(exc)}, status_code=502)
+    finally:
+        del audio_wav
 
-    del audio_wav
+    audio_float32 = pcm_to_float32(pcm)
+    del pcm
 
     align_language = language or "en"
 
@@ -158,7 +164,7 @@ async def asr(
     align_segments = transcription.segments
     if not align_segments:
         audio_duration = float(
-            transcription.metrics.get("audio_duration_sec") or len(pcm) / (16000 * 2)
+            transcription.metrics.get("audio_duration_sec") or pcm_duration_sec
         )
         align_segments = [
             TranscriptionSegment(
@@ -178,7 +184,7 @@ async def asr(
             )
     except AlignmentFailed as exc:
         _log.warning("alignment failed, using fallback SRT: %s", exc)
-        duration = float(transcription.metrics.get("audio_duration_sec") or len(pcm) / (16000 * 2))
+        duration = float(transcription.metrics.get("audio_duration_sec") or pcm_duration_sec)
 
         if task != "translate":
             return PlainTextResponse(

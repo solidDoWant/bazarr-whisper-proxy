@@ -24,10 +24,13 @@ class Settings(BaseSettings):
     # caches the result alongside it (dev convenience; production images
     # bake the .xml directly).
     ALIGNER_MODEL_PATH: str = "~/ctc_forced_aligner/model.xml"
-    # OpenVINO device string. AUTO lets the runtime pick the best available
-    # device; specify "GPU.1", "GPU.0", or "CPU" to pin. Multi-device (e.g.
-    # "MULTI:GPU.1,GPU.0") rounds across devices for concurrent requests.
-    ALIGNER_DEVICE: str = "AUTO"
+    # OpenVINO device string: "GPU", "GPU.0"/"GPU.1" to pick a card, or "CPU"
+    # on hosts without one. Avoid "AUTO": it also compiles the model for CPU so
+    # the first inferences can start before the GPU build is ready, and that
+    # CPU copy of the weights stays resident (~1.9 GiB vs ~0.4 GiB on GPU).
+    # Multi-device (e.g. "MULTI:GPU.1,GPU.0") rounds across devices for
+    # concurrent requests.
+    ALIGNER_DEVICE: str = "GPU"
     # Inference precision hint: f16 is the default on GPU, f32 on CPU.
     ALIGNER_PRECISION: Literal["f16", "f32"] = "f16"
     # Persists OpenVINO's compiled-blob cache so cold starts don't pay the
@@ -35,6 +38,11 @@ class Settings(BaseSettings):
     ALIGNER_CACHE_DIR: str = ""
     ALIGNER_BATCH_SIZE: int = 4
     ALIGNER_WINDOW_SEC: int = 30
+    # Release the compiled aligner after this many idle seconds; the next
+    # request recompiles it (a few seconds with ALIGNER_CACHE_DIR set). Bazarr
+    # sends requests in bursts hours apart, so this keeps the idle footprint
+    # near the bare process. 0 keeps the model loaded forever.
+    ALIGNER_IDLE_UNLOAD_SEC: float = 300.0
 
     # Language detection — center-first shifting-window algorithm (task 15)
     LANG_DETECT_WINDOW_SEC: int = 10

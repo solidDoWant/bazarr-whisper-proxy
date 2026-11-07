@@ -285,6 +285,8 @@ Validation errors abort boot.
 | `ALIGNER_MODEL`           | `mms-1b-all`               | HF id, downloaded once at image build (§7). |
 | `ALIGNER_BATCH_SIZE`      | `16`                       | Inference batch.                            |
 | `ALIGNER_WINDOW_SEC`      | `30`                       | Chunk size for long-form.                   |
+| `ALIGNER_DEVICE`          | `GPU`                      | OpenVINO device; `CPU` without a GPU.       |
+| `ALIGNER_IDLE_UNLOAD_SEC` | `300`                      | Free the aligner when idle; `0` keeps it.   |
 | `LANG_DETECT_HEAD_SEC`    | `30`                       | Audio prefix length for `/detect-language`. |
 | `CUE_MAX_CHARS`           | `84`                       | Hard cue char cap.                          |
 | `CUE_MAX_SEC`             | `6.0`                      | Hard cue duration cap.                      |
