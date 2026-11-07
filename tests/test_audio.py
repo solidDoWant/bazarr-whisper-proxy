@@ -59,6 +59,17 @@ def test_pcm_to_wav_soundfile_accepts_as_valid() -> None:
 # --- Criterion 3: float32 conversion is within 1 ULP of value/32768.0 ---
 
 
+def test_pcm_to_wav_matches_wave_module_output() -> None:
+    pcm = make_pcm(1.5)
+    buf = BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(CHANNELS)
+        wf.setsampwidth(SAMPLE_WIDTH)
+        wf.setframerate(SAMPLE_RATE)
+        wf.writeframes(pcm)
+    assert pcm_to_wav(pcm) == buf.getvalue()
+
+
 def test_pcm_to_float32_known_values() -> None:
     int_vals = [0, 32767, -32768]
     pcm = struct.pack("<3h", *int_vals)

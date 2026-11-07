@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import ctypes
+import gc
 import logging
 import math
 import os
@@ -110,10 +112,66 @@ class AlignmentFailed(Exception):
     pass
 
 
-# Process-level model state — loaded once, reused on all subsequent calls.
+# Process-level model state — loaded on first use, reused until it has been
+# idle for ALIGNER_IDLE_UNLOAD_SEC. All fields below are guarded by _load_lock.
 _load_lock = threading.Lock()
 _compiled_model: Any | None = None
 _tokenizer: Any | None = None
+# Alignments currently running; the model is never unloaded while > 0.
+_active_calls = 0
+# Bumped whenever a call starts, so a pending unload timer can tell that the
+# model was used again after it was scheduled.
+_use_generation = 0
+_unload_timer: threading.Timer | None = None
+
+
+def _begin_use() -> None:
+    global _active_calls, _use_generation, _unload_timer
+    with _load_lock:
+        _active_calls += 1
+        _use_generation += 1
+        if _unload_timer is not None:
+            _unload_timer.cancel()
+            _unload_timer = None
+
+
+def _end_use(idle_unload_sec: float) -> None:
+    global _active_calls, _unload_timer
+    with _load_lock:
+        _active_calls -= 1
+        if idle_unload_sec <= 0 or _active_calls > 0 or _compiled_model is None:
+            return
+        if _unload_timer is not None:
+            _unload_timer.cancel()
+        _unload_timer = threading.Timer(
+            idle_unload_sec, _unload_if_idle, args=(_use_generation, idle_unload_sec)
+        )
+        _unload_timer.daemon = True
+        _unload_timer.start()
+
+
+def _unload_if_idle(generation: int, idle_unload_sec: float) -> None:
+    global _compiled_model, _unload_timer
+    with _load_lock:
+        # A call started (and possibly finished) after this timer was armed;
+        # that call owns the next timer.
+        if generation != _use_generation or _active_calls > 0 or _compiled_model is None:
+            return
+        _compiled_model = None
+        _unload_timer = None
+    gc.collect()
+    _release_free_native_memory()
+    logger.info("aligner model unloaded after %.0fs idle", idle_unload_sec)
+
+
+def _release_free_native_memory() -> None:
+    # glibc keeps freed native memory (most of the compiled model) in its
+    # malloc arenas instead of returning it; ask it to hand that back.
+    try:
+        ctypes.CDLL(None).malloc_trim(0)
+    except OSError, AttributeError:
+        pass  # not glibc
+
 
 # Two workers: one can be running OpenVINO inference while the other does the
 # numpy-bound post-processing for the previous segment.
@@ -386,6 +444,16 @@ def _align_segments_sync(
     return all_words
 
 
+def _align_segments_tracked(idle_unload_sec: float, *args: Any) -> list[Word]:
+    # Usage is tracked on the executor thread rather than in align(), so a
+    # cancelled request can't mark the model idle while its thread still runs.
+    _begin_use()
+    try:
+        return _align_segments_sync(*args)
+    finally:
+        _end_use(idle_unload_sec)
+
+
 async def align(
     audio_float32: np.ndarray,
     segments: list[TranscriptionSegment],
@@ -397,7 +465,8 @@ async def align(
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         _executor,
-        _align_segments_sync,
+        _align_segments_tracked,
+        s.ALIGNER_IDLE_UNLOAD_SEC,
         audio_float32,
         segments,
         language,

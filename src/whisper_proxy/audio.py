@@ -1,5 +1,4 @@
-import io
-import wave
+import struct
 
 import numpy as np
 
@@ -22,18 +21,35 @@ class AudioTooLarge(Exception):
 
 
 def pcm_to_wav(pcm_bytes: bytes, sample_rate: int = 16000, channels: int = 1) -> bytes:
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as wf:
-        wf.setnchannels(channels)
-        wf.setsampwidth(2)  # s16le = 2 bytes per sample
-        wf.setframerate(sample_rate)
-        wf.writeframes(pcm_bytes)
-    return buf.getvalue()
+    # Prepend the 44-byte canonical WAV header directly: one copy of the audio.
+    # Writing through wave + BytesIO.getvalue() held two extra copies at once.
+    sample_width = 2  # s16le
+    block_align = channels * sample_width
+    header = struct.pack(
+        "<4sI4s4sIHHIIHH4sI",
+        b"RIFF",
+        36 + len(pcm_bytes),
+        b"WAVE",
+        b"fmt ",
+        16,  # fmt chunk size
+        1,  # PCM
+        channels,
+        sample_rate,
+        sample_rate * block_align,
+        block_align,
+        sample_width * 8,
+        b"data",
+        len(pcm_bytes),
+    )
+    return header + pcm_bytes
 
 
 def pcm_to_float32(pcm_bytes: bytes) -> np.ndarray:
-    samples = np.frombuffer(pcm_bytes, dtype=np.int16)
-    return (samples / 32768.0).astype(np.float32)
+    # Convert straight to float32 and scale in place. Dividing the int16 array
+    # by a Python float first built a float64 copy twice the size of the result.
+    samples = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32)
+    samples /= np.float32(32768.0)
+    return samples
 
 
 def head_clip(
